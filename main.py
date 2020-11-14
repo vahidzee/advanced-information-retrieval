@@ -112,11 +112,11 @@ class MIR:
         for kdl in keys_to_del:
             del self.positional_indices[kdl]
 
-    def posting_list_by_word(self,word,lang):
-        token=self.prepare_text(word,lang,verbose=False)[0]
+    def posting_list_by_word(self, word, lang):
+        token = self.prepare_text(word, lang, verbose=False)[0]
         print(self.positional_indices[token])
 
-    def words_by_bigram(self,bigram):
+    def words_by_bigram(self, bigram):
         print(self.bigram_indices[bigram].keys())
 
     def save_indices(self):
@@ -132,7 +132,7 @@ class MIR:
             self.bigram_indices = pickle.load(handle)
 
     @staticmethod
-    def prepare_text(text, lang,verbose=True):
+    def prepare_text(text, lang, verbose=True):
         if lang == 'persian':
             punctuation_marks = ['!', '؟', '،', '.', '؛', ':', '«', '»', '-', '[', ']', '{', '}', '|', ')', '(', '/',
                                  '=', '*', '\'']
@@ -181,6 +181,144 @@ class MIR:
             if verbose:
                 print('Tokens:', clean_tokens)
             return clean_tokens
+
+    @staticmethod
+    def bits_to_variable_byte(bits: str):  # function to turn one bit string into the variable byte in string form
+        n = len(bits) // 7
+        m = len(bits) % 7
+        ans = ""
+        if len(bits) % 7 != 0:
+            n += 1
+        if n == 1:
+            ans += '1'
+            ans += '0' * (7 - len(bits))
+            ans += bits
+        else:
+            ans += '0' * (8 - m)
+            ans += bits[:m]
+            for i in range(n - 2):
+                ans += '0'
+                ans += bits[m + (i * 7):m + (i * 7) + 7]
+            ans += '1'
+            ans += bits[len(bits) - 7:len(bits)]
+        return ans
+
+    def variable_byte(self, indices):  # function to produce variable bytes from indices
+        gaps = [indices[0]]
+        for i in range(1, len(indices)):
+            gaps.append(indices[i] - indices[i - 1])
+        for i in range(len(gaps)):
+            gaps[i] = "{0:b}".format(gaps[i])
+        ans = ""
+        for i in gaps:
+            ans += self.bits_to_variable_byte(i)
+        return ans
+
+    @staticmethod
+    def decode_variable_length(bits: str) -> list:  # function to return indices list from variable length bytes
+        n = len(bits) // 8
+        num = ""
+        gaps = []
+        for i in range(n):
+            temp_byte = bits[i * 8:i * 8 + 8]
+            num += temp_byte[1:]
+            if temp_byte[0] == '1':
+                gaps.append(int(num, 2))
+                num = ""
+        indices = [gaps[0]]
+        for i in range(len(gaps) - 1):
+            indices.append(gaps[i + 1] + indices[i])
+        return gaps
+
+    @staticmethod
+    def string_gamma_code(bits: str):  # function to produce gamma code of single number
+        ans = '0' + bits[1:]
+        ans = '1' * (len(bits) - 1) + ans
+        return ans
+
+    def gamma_code(self, indices):  # function to produce gamma code from indices
+        gaps = [indices[0]]
+        for i in range(1, len(indices)):
+            gaps.append(indices[i] - indices[i - 1])
+        for i in range(len(gaps)):
+            gaps[i] = "{0:b}".format(gaps[i])
+        ans = ""
+        for i in gaps:
+            ans += self.string_gamma_code(i)
+        return ans
+
+    @staticmethod
+    def decode_gamma_code(bits: str):  # function to decode gamma code
+        ind = 0
+        cnt = 0
+        gaps = []
+        while ind < len(bits):
+            if bits[ind] == '1':
+                ind += 1
+                cnt += 1
+            else:
+                ind += 1
+                num = '1' + bits[ind:ind + cnt]
+                ind += cnt
+                cnt = 0
+                gaps.append(int(num, 2))
+        indices = [gaps[0]]
+        for i in range(len(gaps) - 1):
+            indices.append(gaps[i + 1] + indices[i])
+        return indices
+
+    @staticmethod
+    def calc_jaccard(A: list, B: list) -> float:  # calculates the jaccard distance of two sets
+        same_cnt = 0
+        for i in A:
+            if i in B:
+                same_cnt += 1
+        return same_cnt / (len(A) + len(B) - same_cnt)
+
+    def fix_query(self, query: str):  # fixes queries considering their languages
+        dictionary = list(self.positional_indices.keys())
+        fixed_query = ''
+        pre_query = query.split()
+        for word in pre_query:
+            if word in dictionary:
+                fixed_query += word
+            else:
+                fixed_query += self.fix_word(word, dictionary)
+        return ' '.join(fixed_query)
+
+    def get_jaccard_list(self, word: str,
+                         dictionary) -> list:  # returns 10 closest words to a word according to the jaccard distance
+        word_list = [word[i:i + 2] for i in range(len(word) - 1)]
+        j_dists = {}
+        for w in dictionary:
+            temp_list = [w[i:i + 2] for i in range(len(w) - 1)]
+            j_dists[w] = self.calc_jaccard(word_list, temp_list)
+        return list(dict(sorted(j_dists.items(), key=lambda x: x[1], reverse=True)).keys())[:10]
+
+    @staticmethod
+    def calc_edit_distance(A: str, B: str) -> int:
+        n = len(A)
+        m = len(B)
+        c = dict()
+        c[(0, 0)] = 0
+        for i in range(m):
+            c[(0, i + 1)] = i + 1
+        for i in range(n):
+            c[(i + 1, 0)] = i + 1
+        for j in range(1, m + 1):
+            for i in range(1, n + 1):
+                if A[i - 1] == B[j - 1]:
+                    c[(i, j)] = c[(i - 1, j - 1)]
+                else:
+                    c[(i, j)] = 1 + min([c[(i, j - 1)], c[(i - 1, j)], c[(i - 1, j - 1)]])
+        return c[(n, m)]
+
+    def fix_word(self, word: str, dictionary: list) -> str:
+        jaccard_closest = self.get_jaccard_list(word, dictionary)
+        dists = {}
+        for w in jaccard_closest:
+            dists[w] = self.calc_edit_distance(word, w)
+        return list(dict(sorted(dists.items(), key=lambda x: x[1], reverse=True)).keys())[0]
 
 
 mir = MIR()
