@@ -7,6 +7,7 @@ import nltk
 import string
 from nltk.stem import PorterStemmer
 import pickle
+from sys import getsizeof
 
 
 class MIR:
@@ -15,12 +16,14 @@ class MIR:
         self.ted_talk_title = []
         self.ted_talk_desc = []
         self.positional_indices = dict()  # key: word value: dict(): key: doc ID, value: list of positions
+        self.coded_indices = dict()  # key: word value: dict(): key: doc ID, value: bytes of indices
         self.bigram_indices = dict()  # key: bi-gram value: dict(): key: word, value: collection freq
         self.collections = []
         self.collections_deleted = []  # vector indicating whether the corresponding document is deleted or not
 
         self.positional_add = 'src/pos.pickle'
         self.bigram_add = 'src/bi.pickle'
+        self.coded_add = 'src/coded.pickle'
 
     def load_datasets(self, dataset='talks'):
         # Loading Ted Talks
@@ -61,9 +64,9 @@ class MIR:
             self.collections.append(document)
             self.collections_deleted.append(False)
             doc_id = len(self.collections) - 1
-        tokens = self.prepare_text(document, lang)
+        tokens = self.prepare_text(document, lang, False)
 
-        # Bigram
+        # Bi-gram
         words = list(set(tokens))
         for word in words:
             bis = self.bigram_word(word)
@@ -125,11 +128,41 @@ class MIR:
         with open(self.bigram_add, 'wb') as handle:
             pickle.dump(self.bigram_indices, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
+    def save_coded_indices(self):
+        self.code_indices()
+        with open(self.coded_add, 'wb') as handle:
+            pickle.dump(self.coded_indices, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        with open(self.bigram_add, 'wb') as handle:
+            pickle.dump(self.bigram_indices, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
     def load_indices(self):
         with open(self.positional_add, 'rb') as handle:
             self.positional_indices = pickle.load(handle)
         with open(self.bigram_add, 'rb') as handle:
             self.bigram_indices = pickle.load(handle)
+
+    def load_coded_indices(self):
+        with open(self.coded_add, 'rb') as handle:
+            self.coded_indices = pickle.load(handle)
+        with open(self.bigram_add, 'rb') as handle:
+            self.bigram_indices = pickle.load(handle)
+        self.decode_indices()
+
+    def code_indices(self, coding="s"):
+        for word in self.positional_indices:
+            self.coded_indices[word] = dict()
+            for doc in self.positional_indices[word]:
+                self.coded_indices[word][doc] = self.gamma_code(
+                    self.positional_indices[word][doc]) if coding == "gamma" else self.variable_byte(
+                    self.positional_indices[word][doc])
+
+    def decode_indices(self, coding="s"):
+        for word in self.coded_indices:
+            self.positional_indices[word] = dict()
+            for doc in self.coded_indices[word]:
+                self.positional_indices[word][doc] = self.decode_gamma_code(format(
+                    self.coded_indices[word][doc], "b")) if coding == "gamma" else self.decode_variable_length(
+                    format(self.coded_indices[word][doc], "b"))
 
     @staticmethod
     def prepare_text(text, lang, verbose=True):
@@ -204,19 +237,23 @@ class MIR:
         return ans
 
     def variable_byte(self, indices):  # function to produce variable bytes from indices
+        indices = list(sorted(indices))
         gaps = [indices[0]]
         for i in range(1, len(indices)):
             gaps.append(indices[i] - indices[i - 1])
         for i in range(len(gaps)):
+            if gaps[i] < 0:
+                print("aaaa", gaps[i], i, indices)
             gaps[i] = "{0:b}".format(gaps[i])
         ans = ""
         for i in gaps:
             ans += self.bits_to_variable_byte(i)
-        return ans
+        return int(ans, 2)
 
     @staticmethod
     def decode_variable_length(bits: str) -> list:  # function to return indices list from variable length bytes
-        n = len(bits) // 8
+        n = (len(bits) + 7) // 8
+        bits = '0' * (8 * n - len(bits)) + bits
         num = ""
         gaps = []
         for i in range(n):
@@ -228,7 +265,7 @@ class MIR:
         indices = [gaps[0]]
         for i in range(len(gaps) - 1):
             indices.append(gaps[i + 1] + indices[i])
-        return gaps
+        return indices
 
     @staticmethod
     def string_gamma_code(bits: str):  # function to produce gamma code of single number
@@ -237,6 +274,7 @@ class MIR:
         return ans
 
     def gamma_code(self, indices):  # function to produce gamma code from indices
+        indices = list(sorted(indices))
         gaps = [indices[0]]
         for i in range(1, len(indices)):
             gaps.append(indices[i] - indices[i - 1])
@@ -245,7 +283,7 @@ class MIR:
         ans = ""
         for i in gaps:
             ans += self.string_gamma_code(i)
-        return ans
+        return int(ans, 2)
 
     @staticmethod
     def decode_gamma_code(bits: str):  # function to decode gamma code
@@ -275,15 +313,15 @@ class MIR:
                 same_cnt += 1
         return same_cnt / (len(A) + len(B) - same_cnt)
 
-    def fix_query(self, query: str):  # fixes queries considering their languages
+    def fix_query(self, query: str, lang: str):  # fixes queries considering their languages
         dictionary = list(self.positional_indices.keys())
-        fixed_query = ''
-        pre_query = query.split()
+        fixed_query = []
+        pre_query = self.prepare_text(query, lang, False)
         for word in pre_query:
             if word in dictionary:
-                fixed_query += word
+                fixed_query.append(word)
             else:
-                fixed_query += self.fix_word(word, dictionary)
+                fixed_query.append(self.fix_word(word, dictionary))
         return ' '.join(fixed_query)
 
     def get_jaccard_list(self, word: str,
@@ -293,7 +331,8 @@ class MIR:
         for w in dictionary:
             temp_list = [w[i:i + 2] for i in range(len(w) - 1)]
             j_dists[w] = self.calc_jaccard(word_list, temp_list)
-        return list(dict(sorted(j_dists.items(), key=lambda x: x[1], reverse=True)).keys())[:10]
+        return [list(dict(sorted(j_dists.items(), key=lambda x: x[1], reverse=True)).keys())[:10],
+                list(dict(sorted(j_dists.items(), key=lambda x: x[1], reverse=True)).values())[:10]]
 
     @staticmethod
     def calc_edit_distance(A: str, B: str) -> int:
@@ -315,10 +354,21 @@ class MIR:
 
     def fix_word(self, word: str, dictionary: list) -> str:
         jaccard_closest = self.get_jaccard_list(word, dictionary)
-        dists = {}
-        for w in jaccard_closest:
-            dists[w] = self.calc_edit_distance(word, w)
-        return list(dict(sorted(dists.items(), key=lambda x: x[1], reverse=True)).keys())[0]
+        min_ed = 100
+        max_jd = 0
+        chosen_word = ''
+        for i in range(len(jaccard_closest[0])):
+            w = jaccard_closest[0][i]
+            w_ed = self.calc_edit_distance(word, w)
+            if w_ed < min_ed:
+                chosen_word = w
+                min_ed = w_ed
+                max_jd = jaccard_closest[1][i]
+            elif w_ed == min_ed and max_jd < jaccard_closest[1][i]:
+                chosen_word = w
+                min_ed = w_ed
+                max_jd = jaccard_closest[1][i]
+        return chosen_word
 
 
 mir = MIR()
