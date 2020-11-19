@@ -2,6 +2,7 @@ from prompt_toolkit.completion import Completion, Completer
 import prompt_toolkit as pt
 from prompt_toolkit.validation import Validator, ValidationError
 from prompt_toolkit.auto_suggest import AutoSuggest, Suggestion
+from .utils import auto_cast
 
 style = pt.styles.Style.from_dict({
     # User input (default text).
@@ -138,7 +139,6 @@ class API:
         self.functs = {funct: getattr(self.mir, funct) for funct in cmds if not funct.endswith('suggestion')}
         self.suggestors = {funct.replace('_suggestion', ''): getattr(self.mir, funct) for funct in cmds if
                            funct.endswith('suggestion')}
-
         self.functs['help'] = self.help
         self.functs[''] = lambda: None
         self.suggestors['help'] = self.help_suggestion
@@ -155,6 +155,7 @@ class API:
                 args = (' '.join(str(item) for item in splits[1:])).split(', ')
                 if not args[-1]:
                     del args[-1]
+                args = [auto_cast(arg) for arg in args]
                 res = self.functs[splits[0]](*args)
                 if res is not None:
                     print(res)
@@ -164,9 +165,9 @@ class API:
             return self.functs.keys()
         if len(args) > 1:
             return []
-        return filter(lambda x: x.startswith(args[0]),  self.functs.keys())
+        return filter(lambda x: x.startswith(args[0]), self.functs.keys())
 
-    def help(self, cmd:str=None):
+    def help(self, cmd: str = None):
         """prints help for available commands or the specified command"""
         for cmd in self.functs if cmd is None else [cmd]:
             if not cmd:
