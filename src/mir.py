@@ -124,7 +124,7 @@ class MIR:
         print(self.positional_indices[token])
 
     def words_by_bigram(self, bigram: str):
-        print(self.bigram_indices[bigram].keys())
+        print(*list(self.bigram_indices.get(bigram, dict()).keys()), sep=', ')
 
     def save_indices(self):
         with open(self.positional_add, 'wb') as handle:
