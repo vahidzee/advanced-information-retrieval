@@ -51,16 +51,33 @@ class MIR:
                             self.persian_wikis.append(ch.text)
                             self.insert(ch.text, 'persian')
 
-    def load_datasets(self):
+    def load_datasets(self, dataset='talks'):
         """loads datasets"""
+        # resetting results
+        self.persian_wikis = []
+        self.ted_talk_title = []
+        self.ted_talk_desc = []
+        self.positional_indices = dict()
+        self.coded_indices = dict()
+        self.bigram_indices = dict()
+        self.collections = []
+        self.collections_deleted = []
         with ProgressBar(title='Loading Datasets') as pb:
-            t1 = threading.Thread(target=self._load_talks, args=(pb,), daemon=True)
-            t2 = threading.Thread(target=self._load_wikis, args=(pb,), daemon=True)
-            t1.start()
-            t2.start()
-            for t in [t1, t2]:
-                while t.is_alive():
-                    t.join(timeout=.5)
+            if dataset == 'talks':
+                self._load_talks(pb)
+            else:
+                self._load_wikis(pb)
+
+    def _fix_query(self, query: str, lang: str):  # fixes queries considering their languages
+        dictionary = list(self.positional_indices.keys())
+        fixed_query = []
+        pre_query = proc_text.prepare_text(query, lang, False)
+        for word in pre_query:
+            if word in dictionary:
+                fixed_query.append(word)
+            else:
+                fixed_query.append(self._fix_query(word, dictionary))
+        return ' '.join(fixed_query)
 
     def insert(self, document, lang: str = "eng", doc_id: int = None):
         """insert a document"""
@@ -148,7 +165,7 @@ class MIR:
             self.bigram_indices = pickle.load(handle)
 
     def save_coded_indices(self):  # todo: arvin bitarray
-        self.code_indices()
+        self._code_indices()
         with open(self.coded_add, 'wb') as handle:
             pickle.dump(self.coded_indices, handle, protocol=pickle.HIGHEST_PROTOCOL)
         with open(self.bigram_add, 'wb') as handle:
@@ -159,9 +176,9 @@ class MIR:
             self.coded_indices = pickle.load(handle)
         with open(self.bigram_add, 'rb') as handle:
             self.bigram_indices = pickle.load(handle)
-        self.decode_indices()
+        self._decode_indices()
 
-    def code_indices(self, coding="s"):  # todo: arvin bitarray
+    def _code_indices(self, coding="s"):  # todo: arvin bitarray
         for word in self.positional_indices:
             self.coded_indices[word] = dict()
             for doc in self.positional_indices[word]:
@@ -169,10 +186,16 @@ class MIR:
                     self.positional_indices[word][doc]) if coding == "gamma" else compress.variable_byte(
                     self.positional_indices[word][doc])
 
-    def decode_indices(self, coding="s"):  # todo: arvin bitarray
+    def _decode_indices(self, coding="s"):  # todo: arvin bitarray
+
         for word in self.coded_indices:
             self.positional_indices[word] = dict()
             for doc in self.coded_indices[word]:
                 self.positional_indices[word][doc] = compress.decode_gamma_code(format(
                     self.coded_indices[word][doc], "b")) if coding == "gamma" else compress.decode_variable_length(
                     format(self.coded_indices[word][doc], "b"))
+
+    def sort_by_relevance(self, query: str, lang: str = 'eng'):
+        query = proc_text.prepare_text(query, lang, False)
+        for item in query:
+            print(item, item in self.positional_indices)

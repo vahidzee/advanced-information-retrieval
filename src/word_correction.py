@@ -50,14 +50,3 @@ def fix_word(word: str, dictionary: list) -> str:
             max_jd = jaccard_closest[1][i]
     return chosen_word
 
-
-def fix_query(self, query: str, lang: str):  # fixes queries considering their languages
-    dictionary = list(self.positional_indices.keys())
-    fixed_query = []
-    pre_query = c(query, lang, False)
-    for word in pre_query:
-        if word in dictionary:
-            fixed_query.append(word)
-        else:
-            fixed_query.append(fix_word(word, dictionary))
-    return ' '.join(fixed_query)
