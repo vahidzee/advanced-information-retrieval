@@ -7,6 +7,7 @@ import src.compression as compress
 import src.text_processing as proc_text
 from prompt_toolkit.shortcuts import ProgressBar
 from prompt_toolkit import print_formatted_text, HTML
+import src.word_correction as wc
 import threading
 from pathlib import Path
 
@@ -68,7 +69,8 @@ class MIR:
             else:
                 self._load_wikis(pb)
 
-    def _fix_query(self, query: str, lang: str):  # fixes queries considering their languages
+    def fix_query(self, query: str, lang: str):
+        """ fixes queries considering their languages"""
         dictionary = list(self.positional_indices.keys())
         fixed_query = []
         pre_query = proc_text.prepare_text(query, lang, False)
@@ -76,8 +78,18 @@ class MIR:
             if word in dictionary:
                 fixed_query.append(word)
             else:
-                fixed_query.append(self._fix_query(word, dictionary))
+                fixed_query.append(wc.fix_word(word, dictionary))
         return ' '.join(fixed_query)
+
+    def calc_jaccard_dist(self, word1, word2):
+        """calculates the jaccard distance of two words"""
+        word_list1 = [word1[i:i + 2] for i in range(len(word1) - 1)]
+        word_list2 = [word2[i:i + 2] for i in range(len(word2) - 1)]
+        return wc.calc_jaccard(word_list1, word_list2)
+
+    def calc_edit_dist(self, word1, word2):
+        """"calculates the edit distance of two words"""
+        return wc.calc_edit_distance(word1, word2)
 
     def insert(self, document, lang: str = "eng", doc_id: int = None):
         """insert a document"""

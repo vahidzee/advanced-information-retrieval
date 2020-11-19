@@ -1,6 +1,3 @@
-from .text_processing import prepare_text
-
-
 def calc_jaccard(a: list, b: list) -> float:  # calculates the jaccard distance of two sets
     same_cnt = sum([1 for i in a if i in b])
     return same_cnt / (len(a) + len(b) - same_cnt)
@@ -49,4 +46,3 @@ def fix_word(word: str, dictionary: list) -> str:
             min_ed = w_ed
             max_jd = jaccard_closest[1][i]
     return chosen_word
-
