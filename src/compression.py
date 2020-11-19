@@ -1,5 +1,5 @@
 def decode_gamma_code(bits: str):  # function to decode gamma code
-    ind, cnt, gapts = 0, 0, list()
+    ind, cnt, gaps = 0, 0, list()
     while ind < len(bits):
         if bits[ind] == '1':
             ind += 1
