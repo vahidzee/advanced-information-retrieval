@@ -67,12 +67,15 @@ class MIR:
         self.collections_deleted = []
         with ProgressBar(title='Loading Datasets') as pb:
             if dataset == 'talks':
+                self.lang = 'eng'
                 self._load_talks(pb)
             else:
+                self.lang = 'persian'
                 self._load_wikis(pb)
 
-    def fix_query(self, query: str, lang: str):
-        """fixes queries considering their languages"""
+    def fix_query(self, query: str):
+        """fixes queries based on the available vocabulary"""
+        lang = self.lang
         dictionary = list(self.positional_indices.keys())
         fixed_query = []
         pre_query = proc_text.prepare_text(query, lang, False)
@@ -83,7 +86,7 @@ class MIR:
                 fixed_query.append(wc.fix_word(word, dictionary))
         return ' '.join(fixed_query)
 
-    def calc_jaccard_dist(self, word1, word2):
+    def calc_jaccard_dist(self, word1: str, word2: str):
         """calculates the jaccard distance of two words"""
         word_list1 = [word1[i:i + 2] for i in range(len(word1) - 1)]
         word_list2 = [word2[i:i + 2] for i in range(len(word2) - 1)]
@@ -93,12 +96,14 @@ class MIR:
         """"calculates the edit distance of two words"""
         return wc.calc_edit_distance(word1, word2)
 
-    def prepare_text(self, text: str, lang: str = 'eng'):
+    def prepare_text(self, text: str, lang: str = None):
         """"""
+        lang = lang or self.lang
         print(proc_text.prepare_text(text, lang, verbose=False))
 
-    def insert(self, document, lang: str = "eng", doc_id: int = None):
+    def insert(self, document, doc_id: int = None):
         """insert a document"""
+        lang = self.lang
         if doc_id is None:
             self.collections.append(document)
             self.collections_deleted.append(False)
@@ -127,7 +132,8 @@ class MIR:
                 self.positional_indices[term][doc_id] = []
             self.positional_indices[term][doc_id].append(i)
 
-    def delete(self, document, lang, doc_id=None):
+    def delete(self, document, doc_id: int = None):
+        lang = self.lang
         if doc_id is None:
             doc_id = self.collections.index(document)
             self.collections_deleted[doc_id] = True
@@ -154,7 +160,8 @@ class MIR:
         for kdl in keys_to_del:
             del self.positional_indices[kdl]
 
-    def posting_list_by_word(self, word, lang):
+    def posting_list_by_word(self, word: str):
+        lang = self.lang
         term = proc_text.prepare_text(word, lang, verbose=False)[0]
         print_formatted_text(HTML(f'<skyblue>Term:</skyblue> <cyan>{term}</cyan>'))
         # print(list(self.positional_indices.get(term, '').keys()), sep=', ')
@@ -197,7 +204,7 @@ class MIR:
             self.bigram_indices = pickle.load(handle)
         self._decode_indices()
 
-    def _code_indices(self, coding="s"):  # todo: arvin bitarray
+    def _code_indices(self, coding: str = "s"):  # todo: arvin bitarray
         for word in self.positional_indices:
             self.coded_indices[word] = dict()
             for doc in self.positional_indices[word]:
@@ -205,7 +212,7 @@ class MIR:
                     self.positional_indices[word][doc]) if coding == "gamma" else compress.variable_byte(
                     self.positional_indices[word][doc])
 
-    def _decode_indices(self, coding="s"):  # todo: arvin bitarray
+    def _decode_indices(self, coding: str = "s"):  # todo: arvin bitarray
         for word in self.coded_indices:
             self.positional_indices[word] = dict()
             for doc in self.coded_indices[word]:
@@ -213,7 +220,8 @@ class MIR:
                     self.coded_indices[word][doc], "b")) if coding == "gamma" else compress.decode_variable_length(
                     format(self.coded_indices[word][doc], "b"))
 
-    def sort_by_relevance(self, query: str, lang: str = 'eng'):
+    def sort_by_relevance(self, query: str):
+        lang = self.lang
         query = proc_text.prepare_text(query, lang, False)
         for item in query:
             print(item, item in self.positional_indices)
