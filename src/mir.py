@@ -1,4 +1,7 @@
 from __future__ import unicode_literals
+
+import collections
+
 import pandas as pd
 import xml.etree.ElementTree as ET
 import pickle
@@ -20,15 +23,20 @@ class MIR:
         self.ted_talk_title = []
         self.ted_talk_desc = []
         self.lang = 'eng'
+        self.dataset_loaded = False
 
         self.positional_indices = dict()  # key: word value: dict(): key: doc ID, value: list of positions
+        self.positional_indices_title = dict()  # key: word value: dict(): key: doc ID, value: list of positions
+
         self.coded_indices = dict()  # key: word value: dict(): key: doc ID, value: bytes of indices
         self.bigram_indices = dict()  # key: bi-gram value: dict(): key: word, value: collection freq
+        self.tokens = []
         self.collections = []
         self.collections_deleted = []  # vector indicating whether the corresponding document is deleted or not
         # creating output root
         Path(self.output_root).mkdir(parents=True, exist_ok=True)
         self.positional_add = 'outputs/pos.pickle'
+        self.positional_title_add = 'outputs/pos_title.pickle'
         self.bigram_add = 'outputs/bi.pickle'
         self.coded_add = 'outputs/coded.pickle'
 
@@ -36,23 +44,32 @@ class MIR:
         talks = pd.read_csv(f'{self.files_root}/ted_talks.csv')
         self.ted_talk_title = talks['title'].to_list()
         self.ted_talk_desc = talks['description'].to_list()
+        self.dataset_loaded = True
         for talk_id in pb(range(len(self.ted_talk_title)), label='Ted Talks') if pb is not None else range(
                 len(self.ted_talk_title)):
             self.collections.append(
                 'title: ' + self.ted_talk_title[talk_id] + '\n' + 'desc: ' + self.ted_talk_desc[talk_id])
             self.collections_deleted.append(False)
-            self.insert(self.ted_talk_title[talk_id], 'eng', len(self.collections) - 1)
-            self.insert(self.ted_talk_desc[talk_id], 'eng', len(self.collections) - 1)
+            self.insert(self.ted_talk_title[talk_id], len(self.collections) - 1, True)
+            self.insert(self.ted_talk_desc[talk_id], len(self.collections) - 1)
 
     def _load_wikis(self, pb=None):
         root = ET.parse(f'{self.files_root}/Persian.xml').getroot()
+        self.dataset_loaded = True
         for child in pb(root, label='Persian Wikis') if pb is not None else root:
+            desc = ''
+            title = ''
             for chil in child:
                 if chil.tag[-8:] == 'revision':
                     for ch in chil:
                         if ch.tag[-4:] == 'text':
-                            self.persian_wikis.append(ch.text)
-                            self.insert(ch.text, 'persian')
+                            desc = ch.text
+                elif chil.tag[-5:] == 'title':
+                    title = chil.text
+            self.collections.append(
+                'title: ' + title + '\n' + 'desc: ' + desc)
+            self.insert(title, len(self.collections) - 1, True)
+            self.insert(desc, len(self.collections) - 1)
 
     def load_dataset(self, dataset='talks'):
         """loads datasets - dataset: ['taks'/'wikis']"""
@@ -101,7 +118,7 @@ class MIR:
         lang = lang or self.lang
         print(proc_text.prepare_text(text, lang, verbose=False))
 
-    def insert(self, document, doc_id: int = None):
+    def insert(self, document, doc_id: int = None, title: bool = False):
         """insert a document"""
         lang = self.lang
         if doc_id is None:
@@ -109,6 +126,7 @@ class MIR:
             self.collections_deleted.append(False)
             doc_id = len(self.collections) - 1
         terms = proc_text.prepare_text(document, lang, False)
+        self.tokens += terms
 
         # Bi-gram
         words = list(set(terms))
@@ -124,13 +142,23 @@ class MIR:
                     self.bigram_indices[bi][word] += 1
 
         # Positional
-        for i in range(len(terms)):
-            term = terms[i]
-            if term not in self.positional_indices.keys():
-                self.positional_indices[term] = dict()
-            if doc_id not in self.positional_indices[term].keys():
-                self.positional_indices[term][doc_id] = []
-            self.positional_indices[term][doc_id].append(i)
+        if not title:
+            for i in range(len(terms)):
+                term = terms[i]
+                if term not in self.positional_indices.keys():
+                    self.positional_indices[term] = dict()
+                if doc_id not in self.positional_indices[term].keys():
+                    self.positional_indices[term][doc_id] = []
+                self.positional_indices[term][doc_id].append(i)
+
+        if title:
+            for i in range(len(terms)):
+                term = terms[i]
+                if term not in self.positional_indices_title.keys():
+                    self.positional_indices_title[term] = dict()
+                if doc_id not in self.positional_indices_title[term].keys():
+                    self.positional_indices_title[term][doc_id] = []
+                self.positional_indices_title[term][doc_id].append(i)
 
     def delete(self, document, doc_id: int = None):
         lang = self.lang
@@ -162,10 +190,18 @@ class MIR:
 
     def posting_list_by_word(self, word: str):
         lang = self.lang
-        term = proc_text.prepare_text(word, lang, verbose=False)[0]
-        print_formatted_text(HTML(f'<skyblue>Term:</skyblue> <cyan>{term}</cyan>'))
         # print(list(self.positional_indices.get(term, '').keys()), sep=', ')
-        print(self.positional_indices.get(term, ''))
+        if not self.dataset_loaded:
+            term = proc_text.prepare_text(word, lang, verbose=False)[0]
+            print_formatted_text(HTML(f'<skyblue>Term:</skyblue> <cyan>{term}</cyan>'))
+            print(self.positional_indices.get(term, ''))
+        else:
+            term = proc_text.prepare_text(word, lang, verbose=False)[0]
+            print_formatted_text(HTML(f'<skyblue>Term:</skyblue> <cyan>{term}</cyan>'))
+            print_formatted_text(HTML(f'<red>Title:</red>'))
+            print(self.positional_indices_title.get(term, ''))
+            print_formatted_text(HTML(f'<red>Description:</red>'))
+            print(self.positional_indices.get(term, ''))
 
     def words_by_bigram(self, bigram: str):
         """get all possible words containing the given bigram"""
@@ -181,12 +217,16 @@ class MIR:
     def save_indices(self):
         with open(self.positional_add, 'wb') as handle:
             pickle.dump(self.positional_indices, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        with open(self.positional_title_add, 'wb') as handle:
+            pickle.dump(self.positional_indices_title, handle, protocol=pickle.HIGHEST_PROTOCOL)
         with open(self.bigram_add, 'wb') as handle:
             pickle.dump(self.bigram_indices, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     def load_indices(self):
         with open(self.positional_add, 'rb') as handle:
             self.positional_indices = pickle.load(handle)
+        with open(self.positional_title_add, 'rb') as handle:
+            self.positional_indices_title = pickle.load(handle)
         with open(self.bigram_add, 'rb') as handle:
             self.bigram_indices = pickle.load(handle)
 
@@ -225,3 +265,13 @@ class MIR:
         query = proc_text.prepare_text(query, lang, False)
         for item in query:
             print(item, item in self.positional_indices)
+
+    def find_stop_words(self):
+
+        counter = collections.Counter(self.tokens)
+        word_freq = sum(counter.values())
+        stop_words = []
+        for key in counter.keys():
+            if counter[key] / word_freq >= 0.005:
+                stop_words.append(key)
+        print(stop_words)
