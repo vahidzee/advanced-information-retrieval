@@ -13,6 +13,7 @@ from prompt_toolkit import print_formatted_text, HTML
 import src.word_correction as wc
 import threading
 from pathlib import Path
+import os
 
 
 class MIR:
@@ -29,6 +30,7 @@ class MIR:
         self.positional_indices_title = dict()  # key: word value: dict(): key: doc ID, value: list of positions
 
         self.coded_indices = dict()  # key: word value: dict(): key: doc ID, value: bytes of indices
+        self.coded_title_indices = dict()
         self.bigram_indices = dict()  # key: bi-gram value: dict(): key: word, value: collection freq
         self.tokens = []
         self.collections = []
@@ -39,6 +41,7 @@ class MIR:
         self.positional_title_add = 'outputs/pos_title.pickle'
         self.bigram_add = 'outputs/bi.pickle'
         self.coded_add = 'outputs/coded.pickle'
+        self.coded_title_add = 'outputs/coded_titles.pickle'
 
     def _load_talks(self, pb=None):
         talks = pd.read_csv(f'{self.files_root}/ted_talks.csv')
@@ -78,8 +81,11 @@ class MIR:
         self.ted_talk_title = []
         self.ted_talk_desc = []
         self.positional_indices = dict()
+        self.positional_indices_title = dict()
         self.coded_indices = dict()
+        self.coded_title_indices = dict()
         self.bigram_indices = dict()
+        self.tokens = []
         self.collections = []
         self.collections_deleted = []
         with ProgressBar(title='Loading Datasets') as pb:
@@ -93,7 +99,7 @@ class MIR:
     def fix_query(self, query: str):
         """fixes queries based on the available vocabulary"""
         lang = self.lang
-        dictionary = list(self.positional_indices.keys())
+        dictionary = list(self.positional_indices.keys()) + list(self.positional_indices_title.keys())
         fixed_query = []
         pre_query = proc_text.prepare_text(query, lang, False)
         for word in pre_query:
@@ -221,6 +227,9 @@ class MIR:
             pickle.dump(self.positional_indices_title, handle, protocol=pickle.HIGHEST_PROTOCOL)
         with open(self.bigram_add, 'wb') as handle:
             pickle.dump(self.bigram_indices, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        print("positional indices size:", os.stat(self.positional_add).st_size)
+        print("positional titles indices size:", os.stat(self.positional_title_add).st_size)
+        print("bigram indices size:", os.stat(self.bigram_add).st_size)
 
     def load_indices(self):
         with open(self.positional_add, 'rb') as handle:
@@ -230,35 +239,56 @@ class MIR:
         with open(self.bigram_add, 'rb') as handle:
             self.bigram_indices = pickle.load(handle)
 
-    def save_coded_indices(self):  # todo: arvin bitarray
-        self._code_indices()
+    def save_coded_indices(self, coding="gamma"):
+        self._code_indices(coding)
         with open(self.coded_add, 'wb') as handle:
             pickle.dump(self.coded_indices, handle, protocol=pickle.HIGHEST_PROTOCOL)
         with open(self.bigram_add, 'wb') as handle:
             pickle.dump(self.bigram_indices, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        with open(self.coded_title_add, 'wb') as handle:
+            pickle.dump(self.coded_title_indices, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        print("coding:", coding)
+        print("coded positional indices size:", os.stat(self.coded_add).st_size)
+        print("coded positional titles indices size:", os.stat(self.coded_title_add).st_size)
+        print("bigram indices size:", os.stat(self.bigram_add).st_size)
 
-    def load_coded_indices(self):  # todo: arvin bitarray
+    def load_coded_indices(self, coding="gamma"):
         with open(self.coded_add, 'rb') as handle:
             self.coded_indices = pickle.load(handle)
         with open(self.bigram_add, 'rb') as handle:
             self.bigram_indices = pickle.load(handle)
-        self._decode_indices()
+        with open(self.coded_title_add, 'rb') as handle:
+            self.coded_title_indices = pickle.load(handle)
+        self._decode_indices(coding)
 
-    def _code_indices(self, coding: str = "s"):  # todo: arvin bitarray
+    def _code_indices(self, coding: str = "variable"):
         for word in self.positional_indices:
             self.coded_indices[word] = dict()
             for doc in self.positional_indices[word]:
                 self.coded_indices[word][doc] = compress.gamma_code(
                     self.positional_indices[word][doc]) if coding == "gamma" else compress.variable_byte(
                     self.positional_indices[word][doc])
+        for word in self.positional_indices_title:
+            self.coded_title_indices[word] = dict()
+            for doc in self.positional_indices_title[word]:
+                self.coded_title_indices[word][doc] = compress.gamma_code(
+                    self.positional_indices_title[word][doc]) if coding == "gamma" else compress.variable_byte(
+                    self.positional_indices_title[word][doc])
 
-    def _decode_indices(self, coding: str = "s"):  # todo: arvin bitarray
+    def _decode_indices(self, coding: str = "variable"):
         for word in self.coded_indices:
             self.positional_indices[word] = dict()
             for doc in self.coded_indices[word]:
                 self.positional_indices[word][doc] = compress.decode_gamma_code(format(
                     self.coded_indices[word][doc], "b")) if coding == "gamma" else compress.decode_variable_length(
                     format(self.coded_indices[word][doc], "b"))
+        for word in self.coded_title_indices:
+            self.positional_indices_title[word] = dict()
+            for doc in self.coded_title_indices[word]:
+                self.positional_indices_title[word][doc] = compress.decode_gamma_code(format(
+                    self.coded_title_indices[word][doc],
+                    "b")) if coding == "gamma" else compress.decode_variable_length(
+                    format(self.coded_title_indices[word][doc], "b"))
 
     def sort_by_relevance(self, query: str):
         lang = self.lang
