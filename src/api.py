@@ -1,4 +1,4 @@
-from prompt_toolkit.completion import WordCompleter
+from prompt_toolkit.completion import Completion, Completer
 import prompt_toolkit as pt
 from prompt_toolkit.validation import Validator, ValidationError
 from prompt_toolkit.auto_suggest import AutoSuggest, Suggestion
@@ -8,7 +8,7 @@ style = pt.styles.Style.from_dict({
     '': 'white bold',
     # Prompt.
     'subcmd': '#884444',
-    'path': 'ansicyan',
+    'sign': 'ansicyan',
 })
 
 message = [
@@ -67,15 +67,83 @@ class SuggestParameter(AutoSuggest):
             return Suggestion(params)
 
 
+class APICompleter(Completer):
+    def __init__(
+            self,
+            api_object,
+            ignore_case: bool = False,
+            meta_dict=None,
+            WORD: bool = False,
+            sentence: bool = False,
+            match_middle: bool = False,
+            pattern=None,
+    ) -> None:
+
+        assert not (WORD and sentence)
+        self.api = api_object
+        self.ignore_case = ignore_case
+        self.meta_dict = meta_dict or {}
+        self.WORD = WORD
+        self.sentence = sentence
+        self.match_middle = match_middle
+        self.pattern = pattern
+
+    def _get_words(self, document):
+        splits = document.split(' ')
+        if len(splits) == 1:
+            return list(self.api.functs.keys())
+        cmd = splits[0]
+        args = (' '.join(str(item) for item in splits[1:])).split(', ')
+        if not args[-1]:
+            del args[-1]
+        if cmd in self.api.suggestors:
+            return self.api.suggestors[cmd](args)
+        return []
+
+    def get_completions(self, document, complete_event):
+        # Get list of words.
+        words = self._get_words(document.text)
+
+        # Get word/text before cursor.
+        if self.sentence:
+            word_before_cursor = document.text_before_cursor
+        else:
+            word_before_cursor = document.get_word_before_cursor(
+                WORD=self.WORD, pattern=self.pattern
+            )
+
+        if self.ignore_case:
+            word_before_cursor = word_before_cursor.lower()
+
+        def word_matches(word: str) -> bool:
+            """ True when the word before the cursor matches. """
+            if self.ignore_case:
+                word = word.lower()
+
+            if self.match_middle:
+                return word_before_cursor in word
+            else:
+                return word.startswith(word_before_cursor)
+
+        for a in words:
+            if word_matches(a):
+                display_meta = self.meta_dict.get(a, "")
+                yield Completion(a, -len(word_before_cursor), display_meta=display_meta)
+
+
 class API:
     def __init__(self, mir_object):
         self.mir = mir_object
         cmds = [funct for funct in dir(self.mir) if not funct.startswith('_') and callable(getattr(self.mir, funct))]
-        self.functs = {funct: getattr(self.mir, funct) for funct in cmds}
+        self.functs = {funct: getattr(self.mir, funct) for funct in cmds if not funct.endswith('suggestion')}
+        self.suggestors = {funct.replace('_suggestion', ''): getattr(self.mir, funct) for funct in cmds if
+                           funct.endswith('suggestion')}
+
         self.functs['help'] = self.help
         self.functs[''] = lambda: None
+        self.suggestors['help'] = self.help_suggestion
         self.session = pt.shortcuts.PromptSession(
-            message=message, style=style, completer=WordCompleter(list(self.functs.keys())),
+            message=message, style=style, completer=APICompleter(self),
             validator=CMDValidator(self), auto_suggest=SuggestParameter(self)
         )
 
@@ -85,13 +153,22 @@ class API:
             splits = cmd.split(' ')
             if splits[0] in self.functs:
                 args = (' '.join(str(item) for item in splits[1:])).split(', ')
-                res = self.functs[splits[0]](*args[1:])
+                if not args[-1]:
+                    del args[-1]
+                res = self.functs[splits[0]](*args)
                 if res is not None:
                     print(res)
 
-    def help(self):
-        """prints help for available commands"""
-        for cmd in self.functs:
+    def help_suggestion(self, args):
+        if not args or not args[0]:
+            return self.functs.keys()
+        if len(args) > 1:
+            return []
+        return filter(lambda x: x.startswith(args[0]),  self.functs.keys())
+
+    def help(self, cmd:str=None):
+        """prints help for available commands or the specified command"""
+        for cmd in self.functs if cmd is None else [cmd]:
             if not cmd:
                 continue
             funct = self.functs[cmd]
@@ -100,8 +177,10 @@ class API:
             params = []
             for par, value in sig.parameters.items():
                 res = f'<green>{par}</green>'
+                if value.annotation is not inspect.Parameter.empty:
+                    res = f'{res}<gray>:{value.annotation.__name__}</gray>'
                 if value.default is not inspect.Parameter.empty:
-                    res = f'{res}<darkgreen>={repr_default_value(value.default)}</darkgreen>'
+                    res = f'{res}<darkgray>={repr_default_value(value.default)}</darkgray>'
                 params.append(res)
             params = ', '.join(str(par) for par in params)
             doc = f'\n\t{funct.__doc__}' if funct.__doc__ else ''

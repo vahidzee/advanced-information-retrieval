@@ -6,7 +6,7 @@ import pickle
 import src.compression as compress
 import src.text_processing as proc_text
 from prompt_toolkit.shortcuts import ProgressBar
-
+from prompt_toolkit import print_formatted_text, HTML
 import threading
 from pathlib import Path
 
@@ -62,7 +62,7 @@ class MIR:
                 while t.is_alive():
                     t.join(timeout=.5)
 
-    def insert(self, document, lang="eng", doc_id=None):
+    def insert(self, document, lang: str = "eng", doc_id: int = None):
         """insert a document"""
         if doc_id is None:
             self.collections.append(document)
@@ -120,11 +120,20 @@ class MIR:
             del self.positional_indices[kdl]
 
     def posting_list_by_word(self, word, lang):
-        token = proc_text.prepare_text(word, lang, verbose=False)[0]
-        print(self.positional_indices[token])
+        term = proc_text.prepare_text(word, lang, verbose=False)[0]
+        print_formatted_text(HTML(f'<skyblue>Term:</skyblue> <cyan>{term}</cyan>'))
+        print(self.positional_indices.get(term, ''))
 
     def words_by_bigram(self, bigram: str):
+        """get all possible words containing the given bigram"""
         print(*list(self.bigram_indices.get(bigram, dict()).keys()), sep=', ')
+
+    def words_by_bigram_suggestion(self, args):
+        if not args or not args[0]:
+            return self.bigram_indices.keys()
+        if len(args) > 1:
+            return []
+        return filter(lambda x: x.startswith(args[0]), self.bigram_indices.keys())
 
     def save_indices(self):
         with open(self.positional_add, 'wb') as handle:
