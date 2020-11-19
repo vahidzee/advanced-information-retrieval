@@ -19,6 +19,8 @@ class MIR:
         self.persian_wikis = []
         self.ted_talk_title = []
         self.ted_talk_desc = []
+        self.lang = 'eng'
+
         self.positional_indices = dict()  # key: word value: dict(): key: doc ID, value: list of positions
         self.coded_indices = dict()  # key: word value: dict(): key: doc ID, value: bytes of indices
         self.bigram_indices = dict()  # key: bi-gram value: dict(): key: word, value: collection freq
@@ -52,8 +54,8 @@ class MIR:
                             self.persian_wikis.append(ch.text)
                             self.insert(ch.text, 'persian')
 
-    def load_datasets(self, dataset='talks'):
-        """loads datasets"""
+    def load_dataset(self, dataset='talks'):
+        """loads datasets - dataset: ['taks'/'wikis']"""
         # resetting results
         self.persian_wikis = []
         self.ted_talk_title = []
@@ -70,7 +72,7 @@ class MIR:
                 self._load_wikis(pb)
 
     def fix_query(self, query: str, lang: str):
-        """ fixes queries considering their languages"""
+        """fixes queries considering their languages"""
         dictionary = list(self.positional_indices.keys())
         fixed_query = []
         pre_query = proc_text.prepare_text(query, lang, False)
@@ -90,6 +92,10 @@ class MIR:
     def calc_edit_dist(self, word1, word2):
         """"calculates the edit distance of two words"""
         return wc.calc_edit_distance(word1, word2)
+
+    def prepare_text(self, text: str, lang: str = 'eng'):
+        """"""
+        print(proc_text.prepare_text(text, lang, verbose=False))
 
     def insert(self, document, lang: str = "eng", doc_id: int = None):
         """insert a document"""
@@ -151,6 +157,7 @@ class MIR:
     def posting_list_by_word(self, word, lang):
         term = proc_text.prepare_text(word, lang, verbose=False)[0]
         print_formatted_text(HTML(f'<skyblue>Term:</skyblue> <cyan>{term}</cyan>'))
+        # print(list(self.positional_indices.get(term, '').keys()), sep=', ')
         print(self.positional_indices.get(term, ''))
 
     def words_by_bigram(self, bigram: str):
@@ -199,7 +206,6 @@ class MIR:
                     self.positional_indices[word][doc])
 
     def _decode_indices(self, coding="s"):  # todo: arvin bitarray
-
         for word in self.coded_indices:
             self.positional_indices[word] = dict()
             for doc in self.coded_indices[word]:

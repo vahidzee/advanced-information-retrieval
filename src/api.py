@@ -3,6 +3,7 @@ import prompt_toolkit as pt
 from prompt_toolkit.validation import Validator, ValidationError
 from prompt_toolkit.auto_suggest import AutoSuggest, Suggestion
 from .utils import auto_cast
+import inspect
 
 style = pt.styles.Style.from_dict({
     # User input (default text).
@@ -16,10 +17,6 @@ message = [
     ('class:subcmd', ''),
     ('class:sign', '> '),
 ]
-
-from prompt_toolkit import prompt
-
-import inspect
 
 
 def repr_default_value(value):

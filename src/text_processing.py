@@ -8,7 +8,7 @@ import hazm
 def prepare_text(text, lang, verbose=True):
     # todo: return only terms (tokenized + stem + lemmatized)
     if lang == 'persian':
-        punctuation_marks = ['!', '؟', '،', '.', '؛', ':', '«', '»', '-', '[', ']', '{', '}', '|', ')', '(', '/',
+        punctuation_marks = ['!', '؟', '`،`', '.', '؛', ':', '«', '»', '-', '[', ']', '{', '}', '|', ')', '(', '/',
                              '=', '*', '\'']
         for punc in punctuation_marks:
             text = text.replace(punc, " ")
@@ -20,7 +20,7 @@ def prepare_text(text, lang, verbose=True):
         word_freq = sum(counter.values())
         stop_words = []
         for key in counter.keys():
-            if counter[key] / word_freq >= 0.3:
+            if counter[key] / word_freq >= 1.1:
                 stop_words.append(key)
         if verbose:
             print('Stop Words:', stop_words)
