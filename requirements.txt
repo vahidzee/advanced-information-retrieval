@@ -2,3 +2,4 @@ pandas
 nltk
 hazm
 tqdm
+prompt_toolkit
