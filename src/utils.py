@@ -30,7 +30,7 @@ def nonify(s: str):
 
 
 def auto_cast(s):
-    for fn in (dictify, boolify, int, float):
+    for fn in (boolify, int, float):
         try:
             return fn(s)
         except ValueError:

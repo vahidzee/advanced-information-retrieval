@@ -52,7 +52,7 @@ class MIR:
         self.ted_talk_desc = talks['description'].to_list()
         for talk_id in pb(range(len(self.ted_talk_title)), label='Ted Talks') if pb is not None else range(
                 len(self.ted_talk_title)):
-            self._insert(self.ted_talk_desc[talk_id], self.ted_talk_title[talk_id])
+            self._insert(self.ted_talk_title[talk_id], self.ted_talk_desc[talk_id])
 
     def _load_wikis(self, pb=None):
         root = ET.parse(f'{self.files_root}/Persian.xml').getroot()
@@ -66,7 +66,7 @@ class MIR:
                             desc = ch.text
                 elif chil.tag[-5:] == 'title':
                     title = chil.text
-            self._insert(desc, title)
+            self._insert(title, desc)
 
     def load_dataset(self, dataset='talks'):
         """loads a dataset - dataset: ['taks'/'wikis']"""
@@ -90,7 +90,6 @@ class MIR:
             else:
                 self.lang = 'persian'
                 self._load_wikis(pb)
-        print(len(self.collections))
 
     def load_dataset_suggestion(self, args):
         choices = ['talks', 'wikis']
@@ -161,16 +160,37 @@ class MIR:
         doc_id = self._insert(title, description)
         print_match_doc(doc_id=doc_id, title=title, description=description)
 
-    # todo vahid
+    @staticmethod
+    def _delete_position(doc_id, dictionary):
+        keys_to_del = []
+        for key in dictionary.keys():
+            if doc_id in dictionary[key].keys():
+                del dictionary[key][doc_id]
+            if len(dictionary[key].keys()) == 0:
+                keys_to_del.append(key)
+        for kdl in keys_to_del:
+            del dictionary[kdl]
+
     def delete(self, doc_id: int):
         """deletes a document from the collection - doc_id: document's identifier"""
         lang = self.lang
+        if doc_id > len(self.collections) or doc_id in self.collections_deleted or doc_id < 0:
+            return
 
-        tokens = proc_text.prepare_text(self.collections[doc_id][1], lang)
-        tokens_title = proc_text.prepare_text(self.collections[doc_id][0], lang)
-        # Bigram
-        words = list(set(tokens))
+        terms_description = proc_text.prepare_text(self.collections[doc_id][1], lang)
+        terms_title = proc_text.prepare_text(self.collections[doc_id][0], lang)
+
+        # Positionals
+        self._delete_position(doc_id, self.positional_indices_title)
+        self._delete_position(doc_id, self.positional_indices)
+
+        words = list(set(terms_description + terms_title))
         for word in words:
+            # vocabulary
+            if word not in self.positional_indices and word not in self.positional_indices_title:
+                self.vocabulary.remove(word)
+
+            # bigram
             bis = proc_text.bigram_word(word)
             for bi in bis:
                 self.bigram_indices[bi][word] -= 1
@@ -179,15 +199,8 @@ class MIR:
                 if len(self.bigram_indices[bi].keys()) == 0:
                     del self.bigram_indices[bi]
 
-        # Positional
-        keys_to_del = []
-        for key in self.positional_indices.keys():
-            if doc_id in self.positional_indices[key].keys():
-                del self.positional_indices[key][doc_id]
-            if len(self.positional_indices[key].keys()) == 0:
-                keys_to_del.append(key)
-        for kdl in keys_to_del:
-            del self.positional_indices[kdl]
+        self.collections_deleted.append(doc_id)
+        print('Document', doc_id, 'deleted successfully')
 
     def find_stop_words(self):
         counter = collections.Counter(self.vocabulary)
@@ -351,7 +364,6 @@ class MIR:
         dictionary = self.positional_indices if zone == 'description' else self.positional_indices_title
         collection_idx = 1 if zone == 'description' else 0
         query_scores = score_query(query_terms, dictionary, len(self.collections))
-        print(zone, query_scores, query_terms)
         result = dict()
         for term, term_score in zip(query_terms, query_scores):
             posting = dictionary.get(term, dict())

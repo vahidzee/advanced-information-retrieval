@@ -22,7 +22,7 @@ def ltc(tfs, dfs, n):
     tdfs = [log(n / df) if df else 0 for df in dfs]
     scores = [x * y for x, y in zip(ltfs, tdfs)]
     scale = math.sqrt(sum(score ** 2 for score in scores))
-    return [score / scale for score in scores]
+    return [score / scale if scale else 0 for score in scores]
 
 
 def score_query(query_terms: list, dictionary: dict, n: int):
