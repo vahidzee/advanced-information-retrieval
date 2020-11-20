@@ -11,8 +11,9 @@ import src.text_processing as proc_text
 from prompt_toolkit.shortcuts import ProgressBar
 from prompt_toolkit import print_formatted_text, HTML
 import src.word_correction as wc
-import threading
+from src.vector_space import score_query, scale_lnc, logarithmic
 from pathlib import Path
+from src.utils import print_match_doc
 import os
 
 
@@ -33,7 +34,6 @@ class MIR:
         self.coded_title_indices = dict()
         self.vocabulary = set()
         self.bigram_indices = dict()  # key: bi-gram value: dict(): key: word, value: collection freq
-        self.tokens = []
         self.collections = []
         self.collections_deleted = []  # vector indicating whether the corresponding document is deleted or not
 
@@ -50,18 +50,12 @@ class MIR:
         talks = pd.read_csv(f'{self.files_root}/ted_talks.csv')
         self.ted_talk_title = talks['title'].to_list()
         self.ted_talk_desc = talks['description'].to_list()
-        self.dataset_loaded = True
         for talk_id in pb(range(len(self.ted_talk_title)), label='Ted Talks') if pb is not None else range(
                 len(self.ted_talk_title)):
-            self.collections.append(
-                'title: ' + self.ted_talk_title[talk_id] + '\n' + 'desc: ' + self.ted_talk_desc[talk_id])
-            self.collections_deleted.append(False)
-            self.insert(self.ted_talk_title[talk_id], len(self.collections) - 1, True)
-            self.insert(self.ted_talk_desc[talk_id], len(self.collections) - 1)
+            self._insert(self.ted_talk_desc[talk_id], self.ted_talk_title[talk_id])
 
     def _load_wikis(self, pb=None):
         root = ET.parse(f'{self.files_root}/Persian.xml').getroot()
-        self.dataset_loaded = True
         for child in pb(root, label='Persian Wikis') if pb is not None else root:
             desc = ''
             title = ''
@@ -72,13 +66,10 @@ class MIR:
                             desc = ch.text
                 elif chil.tag[-5:] == 'title':
                     title = chil.text
-            self.collections.append(
-                'title: ' + title + '\n' + 'desc: ' + desc)
-            self.insert(title, len(self.collections) - 1, True)
-            self.insert(desc, len(self.collections) - 1)
+            self._insert(desc, title)
 
     def load_dataset(self, dataset='talks'):
-        """loads datasets - dataset: ['taks'/'wikis']"""
+        """loads a dataset - dataset: ['taks'/'wikis']"""
         # resetting results
         self.persian_wikis = []
         self.ted_talk_title = []
@@ -88,9 +79,9 @@ class MIR:
         self.coded_indices = dict()
         self.coded_title_indices = dict()
         self.bigram_indices = dict()
-        self.tokens = []
         self.collections = []
         self.collections_deleted = []
+        self.dataset_loaded = True
         self.vocabulary = set()
         with ProgressBar(title='Loading Datasets') as pb:
             if dataset == 'talks':
@@ -99,6 +90,7 @@ class MIR:
             else:
                 self.lang = 'persian'
                 self._load_wikis(pb)
+        print(len(self.collections))
 
     def load_dataset_suggestion(self, args):
         choices = ['talks', 'wikis']
@@ -109,11 +101,11 @@ class MIR:
         return filter(lambda x: x.startswith(args[0]), choices)
 
     # part 1
-    # todo vahid, color results
     def prepare_text(self, text: str, lang: str = None):
-        """"""
+        """pre-processes text based on the specified language"""
         lang = lang or self.lang
-        print(proc_text.prepare_text(text, lang, verbose=False))
+        terms = proc_text.prepare_text(text, lang, verbose=False)
+        print_formatted_text(HTML(f'<skyblue>Terms:</skyblue> <i>{" ".join(terms)}</i>'))
 
     def prepare_text_suggestion(self, args):
         choices = ['eng', 'persian', 'none']
@@ -121,52 +113,57 @@ class MIR:
             return choices
         return []
 
-    # todo vahid
-    def insert(self, document: str, title: str = None):
-        """insert a document"""
+    def _insert_bigram(self, word):
+        bis = proc_text.bigram_word(word)
+        for bi in bis:
+            if bi not in self.bigram_indices.keys():
+                self.bigram_indices[bi] = dict()
+
+            if word not in self.bigram_indices[bi].keys():
+                self.bigram_indices[bi][word] = 1
+            else:
+                self.bigram_indices[bi][word] += 1
+
+    def _insert_position(self, terms, dictionary, doc_id):
+        for i in range(len(terms)):
+            term = terms[i]
+            if term not in dictionary.keys():
+                dictionary[term] = dict()
+            if doc_id not in dictionary[term].keys():
+                dictionary[term][doc_id] = []
+            dictionary[term][doc_id].append(i)
+            self.vocabulary.add(term)
+
+    def _insert(self, title, description):
         lang = self.lang
-        self.collections.append(document)
-        self.collections_deleted.append(False)
-        doc_id = len(self.collections) - 1
-        terms = proc_text.prepare_text(document, lang, False)
-        self.tokens += terms
+        if self.collections_deleted:
+            doc_id = self.collections_deleted.pop(0)
+            self.collections[doc_id] = (title, description)
+        else:
+            self.collections.append((title, description))
+            doc_id = len(self.collections) - 1
+        terms_document = proc_text.prepare_text(description, lang, False)
+        terms_title = proc_text.prepare_text(title, lang, False)
 
         # Bi-gram
-        words = list(set(terms))
-        for word in words:
-            bis = proc_text.bigram_word(word)
-            for bi in bis:
-                if bi not in self.bigram_indices.keys():
-                    self.bigram_indices[bi] = dict()
-
-                if word not in self.bigram_indices[bi].keys():
-                    self.bigram_indices[bi][word] = 1
-                else:
-                    self.bigram_indices[bi][word] += 1
+        for word in set(terms_document):
+            self._insert_bigram(word)
+        for word in set(terms_title):
+            self._insert_bigram(word)
 
         # Positional
-        if not title:
-            for i in range(len(terms)):
-                term = terms[i]
-                if term not in self.positional_indices.keys():
-                    self.positional_indices[term] = dict()
-                if doc_id not in self.positional_indices[term].keys():
-                    self.positional_indices[term][doc_id] = []
-                self.positional_indices[term][doc_id].append(i)
-                self.vocabulary.add(term)
+        self._insert_position(terms_document, self.positional_indices, doc_id)
+        self._insert_position(terms_title, self.positional_indices_title, doc_id)
+        return doc_id
 
-        if title:
-            for i in range(len(terms)):
-                term = terms[i]
-                if term not in self.positional_indices_title.keys():
-                    self.positional_indices_title[term] = dict()
-                if doc_id not in self.positional_indices_title[term].keys():
-                    self.positional_indices_title[term][doc_id] = []
-                self.positional_indices_title[term][doc_id].append(i)
-                self.vocabulary.add(term)
+    def insert(self, title: str, description: str):
+        """inserts a document into the collection - title: document title, description: document's description"""
+        doc_id = self._insert(title, description)
+        print_match_doc(doc_id=doc_id, title=title, description=description)
 
     # todo vahid
     def delete(self, doc_id: int):
+        """deletes a document from the collection - doc_id: document's identifier"""
         lang = self.lang
 
         tokens = proc_text.prepare_text(self.collections[doc_id][1], lang)
@@ -193,7 +190,7 @@ class MIR:
             del self.positional_indices[kdl]
 
     def find_stop_words(self):
-        counter = collections.Counter(self.tokens)
+        counter = collections.Counter(self.vocabulary)
         word_freq = sum(counter.values())
         stop_words = []
         for key in counter.keys():
@@ -202,23 +199,25 @@ class MIR:
         print(stop_words)
 
     # part 2
-    # todo vahid
     def posting_list_by_word(self, word: str):
         lang = self.lang
-        # print(list(self.positional_indices.get(term, '').keys()), sep=', ')
         if not self.dataset_loaded:
-            term = proc_text.prepare_text(word, lang, verbose=False)[0]
-            print_formatted_text(HTML(f'<skyblue>Term:</skyblue> <cyan>{term}</cyan>'))
-            print(self.positional_indices.get(term, ''))
-        else:
-            term = proc_text.prepare_text(word, lang, verbose=False)[0]
-            print_formatted_text(HTML(f'<skyblue>Term:</skyblue> <cyan>{term}</cyan>'))
-            print_formatted_text(HTML(f'<skyblue>Title:</skyblue>'))
-            for idx, values in self.positional_indices_title.get(term, dict()).items():
-                print(idx)
-                print(self.collections[idx])
-            print_formatted_text(HTML(f'<red>Description:</red>'))
-            print(self.positional_indices.get(term, ''))
+            self.prepare_text(word, lang)
+            return
+        term = proc_text.prepare_text(word, lang, verbose=False)[0]
+        print_formatted_text(HTML(f'<skyblue>Term:</skyblue> <cyan>{term}</cyan>'))
+        for idx, values in self.positional_indices_title.get(term, dict()).items():
+            print_match_doc(
+                idx, positions_title=values, title=self.collections[idx][0], terms=[term],
+                print_terms=False, lang=lang,
+                description=None if idx not in self.positional_indices.get(term, dict()) else self.collections[idx][1],
+                positions_description=self.positional_indices.get(term, dict()).get(idx, tuple())
+            )
+        for idx, values in self.positional_indices.get(term, dict()).items():
+            if idx in self.positional_indices_title.get(term, set()):
+                continue
+            print_match_doc(idx, positions_description=values, description=self.collections[idx][1], terms=[term],
+                            print_terms=False, lang=lang)
 
     def posting_list_by_word_suggestion(self, args):
         if not args or not args[0]:
@@ -347,11 +346,39 @@ class MIR:
         return wc.calc_edit_distance(word1, word2)
 
     # part 5
-    def sort_by_relevance(self, query: str):
+    def _score_docs(self, query_terms, zone='title'):
         lang = self.lang
-        query = proc_text.prepare_text(query, lang, False)
-        for item in query:
-            print(item, item in self.positional_indices)
+        dictionary = self.positional_indices if zone == 'description' else self.positional_indices_title
+        collection_idx = 1 if zone == 'description' else 0
+        query_scores = score_query(query_terms, dictionary, len(self.collections))
+        print(zone, query_scores, query_terms)
+        result = dict()
+        for term, term_score in zip(query_terms, query_scores):
+            posting = dictionary.get(term, dict())
+            for doc, positions in posting.items():
+                if doc not in result:
+                    result[doc] = 0
+                result[doc] += logarithmic(len(positions)) * term_score
+
+        for doc in result:
+            result[doc] /= scale_lnc(self.collections[doc][collection_idx], lang)
+        return result
+
+    def sort_by_relevance(self, query: str, k: int = 10):
+        """find top-k relevant documents based on search"""
+        lang = self.lang
+        self.prepare_text(query, lang)  # print the query terms
+        query_terms = proc_text.prepare_text(query, lang, False)
+        title_scores = self._score_docs(query_terms, 'title')
+        description_scores = self._score_docs(query_terms, 'description')
+        result = dict()
+        for doc in description_scores:
+            result[doc] = description_scores[doc] + title_scores.get(doc, 0)
+        for doc_id, score in sorted(list(result.items())[:k], key=lambda x: x[1], reverse=True):
+            print_match_doc(
+                doc_id=doc_id, score=score, description=self.collections[doc_id][1], title=self.collections[doc_id][0],
+                terms=query_terms, print_terms=False
+            )
 
     def proximity_search(self, query: str, window: int = 5):
         pass
