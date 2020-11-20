@@ -137,7 +137,7 @@ class API:
                            funct.endswith('suggestion')}
         self.functs['help'] = self.help
         self.functs[''] = lambda: None
-        self.functs['exit'] = exec
+        self.functs['exit'] = exit
         self.suggestors['help'] = self.help_suggestion
         self.session = pt.shortcuts.PromptSession(
             message=message, style=style, completer=APICompleter(self),
