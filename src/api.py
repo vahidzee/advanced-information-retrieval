@@ -33,13 +33,13 @@ class CMDValidator(Validator):
         text = document.text
         splits = text.split(' ')
         if splits[0] not in self.api.functs:
-            raise ValidationError(message=f'{text} function is not available',
+            raise ValidationError(message=f'command {text} is not available',
                                   cursor_position=len(text))
         else:
             sig = inspect.signature(self.api.functs[splits[0]])
             args = text.split(',')
             if len(args) - 1 > len(sig.parameters):
-                raise ValidationError(message=f'{text} function only takes {len(sig.parameters)} parameters',
+                raise ValidationError(message=f'command {text} only takes {len(sig.parameters)} parameters',
                                       cursor_position=len(text))
 
 
@@ -114,7 +114,6 @@ class APICompleter(Completer):
             word_before_cursor = word_before_cursor.lower()
 
         def word_matches(word: str) -> bool:
-            """ True when the word before the cursor matches. """
             if self.ignore_case:
                 word = word.lower()
 
@@ -182,4 +181,6 @@ class API:
                 params.append(res)
             params = ', '.join(str(par) for par in params)
             doc = f'\n\t{funct.__doc__}' if funct.__doc__ else ''
-            pt.print_formatted_text(pt.formatted_text.HTML(f'{name} {params}{doc}'))
+            pt.print_formatted_text(pt.formatted_text.HTML(f'{name}'), end='')
+            pt.print_formatted_text(pt.formatted_text.HTML(f' {params}'), end='')
+            pt.print_formatted_text(pt.formatted_text.HTML(f'{doc}'))

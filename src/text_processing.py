@@ -5,11 +5,11 @@ from nltk.stem import PorterStemmer
 import hazm
 
 
-def prepare_text(text, lang, verbose=True):
+def prepare_text(text, lang, verbose=False):
     # todo: return only terms (tokenized + stem + lemmatized)
     if lang == 'persian':
-        punctuation_marks = ['!', '؟', '،', '.', '؛', ':', '«', '»','<', '>', '-', '[', ']', '{', '}', '|', ')', '(', '/',
-                             '=', '*', '\'']
+        punctuation_marks = ['!', '؟', '،', '.', '؛', ':', '«', '»', '<', '>', '-', '[', ']', '{', '}', '|', ')', '(',
+                             '/', '=', '*', '\'', ',', '"', '`', '?']
         for punc in punctuation_marks:
             text = text.replace(punc, " ")
         normalizer = hazm.Normalizer()
