@@ -21,7 +21,6 @@ class MIR:
     def __init__(self, files_root: str = './files', output_root: str = './outputs'):
         self.files_root = files_root
         self.output_root = output_root
-        self.persian_wikis = []
         self.ted_talk_title = []
         self.ted_talk_desc = []
         self.lang = 'eng'
@@ -32,7 +31,7 @@ class MIR:
 
         self.coded_indices = dict()  # key: word value: dict(): key: doc ID, value: bytes of indices
         self.coded_title_indices = dict()
-        self.vocabulary = set()
+        self.vocabulary = dict()
         self.bigram_indices = dict()  # key: bi-gram value: dict(): key: word, value: collection freq
         self.collections = []
         self.collections_deleted = []  # vector indicating whether the corresponding document is deleted or not
@@ -48,11 +47,11 @@ class MIR:
     # part 0
     def _load_talks(self, pb=None):
         talks = pd.read_csv(f'{self.files_root}/ted_talks.csv')
-        self.ted_talk_title = talks['title'].to_list()
-        self.ted_talk_desc = talks['description'].to_list()
-        for talk_id in pb(range(len(self.ted_talk_title)), label='Ted Talks') if pb is not None else range(
-                len(self.ted_talk_title)):
-            self._insert(self.ted_talk_title[talk_id], self.ted_talk_desc[talk_id])
+        ted_talk_title = talks['title'].to_list()
+        ted_talk_desc = talks['description'].to_list()
+        for talk_id in pb(range(len(ted_talk_title)), label='Ted Talks') if pb is not None else range(
+                len(ted_talk_title)):
+            self._insert(ted_talk_title[talk_id], ted_talk_desc[talk_id])
 
     def _load_wikis(self, pb=None):
         root = ET.parse(f'{self.files_root}/Persian.xml').getroot()
@@ -71,9 +70,6 @@ class MIR:
     def load_dataset(self, dataset='talks'):
         """loads a dataset - dataset: ['taks'/'wikis']"""
         # resetting results
-        self.persian_wikis = []
-        self.ted_talk_title = []
-        self.ted_talk_desc = []
         self.positional_indices = dict()
         self.positional_indices_title = dict()
         self.coded_indices = dict()
@@ -82,7 +78,7 @@ class MIR:
         self.collections = []
         self.collections_deleted = []
         self.dataset_loaded = True
-        self.vocabulary = set()
+        self.vocabulary = dict()
         with ProgressBar(title='Loading Datasets') as pb:
             if dataset == 'talks':
                 self.lang = 'eng'
@@ -131,7 +127,9 @@ class MIR:
             if doc_id not in dictionary[term].keys():
                 dictionary[term][doc_id] = []
             dictionary[term][doc_id].append(i)
-            self.vocabulary.add(term)
+            if term not in self.vocabulary:
+                self.vocabulary[term] = 0
+            self.vocabulary[term] += 1
 
     def _insert(self, title, description):
         lang = self.lang
@@ -160,11 +158,11 @@ class MIR:
         doc_id = self._insert(title, description)
         print_match_doc(doc_id=doc_id, title=title, description=description)
 
-    @staticmethod
-    def _delete_position(doc_id, dictionary):
+    def _delete_position(self, doc_id, dictionary):
         keys_to_del = []
         for key in dictionary.keys():
             if doc_id in dictionary[key].keys():
+                self.vocabulary[key] -= len(dictionary[key][doc_id])
                 del dictionary[key][doc_id]
             if len(dictionary[key].keys()) == 0:
                 keys_to_del.append(key)
@@ -186,11 +184,9 @@ class MIR:
 
         words = list(set(terms_description + terms_title))
         for word in words:
-            # vocabulary
-            if word not in self.positional_indices and word not in self.positional_indices_title:
-                self.vocabulary.remove(word)
-
             # bigram
+            if not self.vocabulary[word]:
+                del self.vocabulary[word]
             bis = proc_text.bigram_word(word)
             for bi in bis:
                 self.bigram_indices[bi][word] -= 1
@@ -202,17 +198,16 @@ class MIR:
         self.collections_deleted.append(doc_id)
         print('Document', doc_id, 'deleted successfully')
 
-    def find_stop_words(self):
-        counter = collections.Counter(self.vocabulary)
-        word_freq = sum(counter.values())
-        stop_words = []
-        for key in counter.keys():
-            if counter[key] / word_freq >= 0.005:
-                stop_words.append(key)
-        print(stop_words)
+    def stop_words(self, threshold=0.5):
+        """lists stopwords based on overall frequency - threshold: frequency percentage"""
+        word_freq = sum(self.vocabulary.values())
+        stop_words = list(filter(lambda x: x[1] / word_freq >= threshold / 100., self.vocabulary.items()))
+        print(', '.join(
+            f'{x[0]}({x[1] / word_freq * 100.:.04f}%)' for x in sorted(stop_words, key=lambda x: x[1], reverse=True)))
 
     # part 2
     def posting_list_by_word(self, word: str):
+        """retrieves posting list based on given word"""
         lang = self.lang
         if not self.dataset_loaded:
             self.prepare_text(word, lang)
@@ -241,7 +236,7 @@ class MIR:
 
     def words_by_bigram(self, bigram: str):
         """get all possible words containing the given bigram"""
-        print(*list(self.bigram_indices.get(bigram, dict()).keys()), sep='\n')
+        print(*list(self.bigram_indices.get(bigram, dict()).keys()), sep=', ')
 
     def words_by_bigram_suggestion(self, args):
         if not args or not args[0]:
@@ -250,27 +245,39 @@ class MIR:
             return []
         return filter(lambda x: x.startswith(args[0]), self.bigram_indices.keys())
 
-    def save_indices(self):
+    def _load_vocabulary(self):
+        self.vocabulary = dict()
+        for term in self.positional_indices:
+            self.vocabulary[term] = sum([len(value) for doc, value in self.positional_indices[term].items()])
+        for term in self.positional_indices_title:
+            if term not in self.vocabulary:
+                self.vocabulary[term] = 0
+            self.vocabulary[term] += sum([len(value) for doc, value in self.positional_indices_title[term].items()])
+
+    def save(self):
+        """saves indices without compression"""
         with open(self.positional_add, 'wb') as handle:
             pickle.dump(self.positional_indices, handle, protocol=pickle.HIGHEST_PROTOCOL)
         with open(self.positional_title_add, 'wb') as handle:
             pickle.dump(self.positional_indices_title, handle, protocol=pickle.HIGHEST_PROTOCOL)
         with open(self.bigram_add, 'wb') as handle:
             pickle.dump(self.bigram_indices, handle, protocol=pickle.HIGHEST_PROTOCOL)
-        print("positional indices size:", os.stat(self.positional_add).st_size)
-        print("positional titles indices size:", os.stat(self.positional_title_add).st_size)
-        print("bigram indices size:", os.stat(self.bigram_add).st_size)
+        print("positional indices size:", os.stat(self.positional_add).st_size, ' bytes')
+        print("positional titles indices size:", os.stat(self.positional_title_add).st_size, ' bytes')
+        print("bigram indices size:", os.stat(self.bigram_add).st_size, ' bytes')
 
-    def load_indices(self):
+    def load(self):
+        """loads uncompressed indices"""
         with open(self.positional_add, 'rb') as handle:
             self.positional_indices = pickle.load(handle)
         with open(self.positional_title_add, 'rb') as handle:
             self.positional_indices_title = pickle.load(handle)
+        self._load_vocabulary()
         with open(self.bigram_add, 'rb') as handle:
             self.bigram_indices = pickle.load(handle)
 
     # part 3
-    def save_coded_indices(self, coding: str = "gamma"):
+    def save_coded(self, coding: str = "gamma"):
         """compress and encode and save the indices - coding: ['gamma', 'variable']"""
         self._code_indices(coding)
         with open(self.coded_add, 'wb') as handle:
@@ -280,11 +287,11 @@ class MIR:
         with open(self.coded_title_add, 'wb') as handle:
             pickle.dump(self.coded_title_indices, handle, protocol=pickle.HIGHEST_PROTOCOL)
         print("coding:", coding)
-        print("coded positional indices size:", os.stat(self.coded_add).st_size)
-        print("coded positional titles indices size:", os.stat(self.coded_title_add).st_size)
-        print("bigram indices size:", os.stat(self.bigram_add).st_size)
+        print("coded positional indices size:", os.stat(self.coded_add).st_size, 'bytes')
+        print("coded positional titles indices size:", os.stat(self.coded_title_add).st_size, 'bytes')
+        print("bigram indices size:", os.stat(self.bigram_add).st_size, 'bytes')
 
-    def load_coded_indices(self, coding: str = "gamma"):
+    def load_coded(self, coding: str = "gamma"):
         """load the saved coded indices - coding: ['gamma', 'variable']"""
         with open(self.coded_add, 'rb') as handle:
             self.coded_indices = pickle.load(handle)
@@ -293,8 +300,9 @@ class MIR:
         with open(self.coded_title_add, 'rb') as handle:
             self.coded_title_indices = pickle.load(handle)
         self._decode_indices(coding)
+        self._load_vocabulary()
 
-    def load_coded_indices_suggestion(self, args):
+    def load_coded_suggestion(self, args):
         codings = ['gamma', 'variable']
         if not args or not args[0]:
             return codings
@@ -302,8 +310,8 @@ class MIR:
             return []
         return filter(lambda x: x.startswith(args[0]), codings)
 
-    def save_coded_indices_suggestion(self, args):
-        return self.load_coded_indices_suggestion(args)
+    def save_coded_suggestion(self, args):
+        return self.load_coded_suggestion(args)
 
     def _code_indices(self, coding: str = "variable"):
         for word in self.positional_indices:
@@ -334,10 +342,11 @@ class MIR:
                     "b")) if coding == "gamma" else compress.decode_variable_length(
                     format(self.coded_title_indices[word][doc], "b"))
 
+    # part 4
     def fix_query(self, query: str):
-        """fixes queries based on the available vocabulary"""
+        """fixes queries based on the available vocabulary and jaccard distance"""
         lang = self.lang
-        dictionary = list(self.positional_indices.keys()) + list(self.positional_indices_title.keys())
+        dictionary = list(self.vocabulary.keys())
         fixed_query = []
         pre_query = proc_text.prepare_text(query, lang, False)
         for word in pre_query:
@@ -347,19 +356,18 @@ class MIR:
                 fixed_query.append(wc.fix_word(word, dictionary))
         return ' '.join(fixed_query)
 
-    # part 4
-    def calc_jaccard_dist(self, word1: str, word2: str):
+    def jaccard_dist(self, word1: str, word2: str):
         """calculates the jaccard distance of two words"""
         word_list1 = [word1[i:i + 2] for i in range(len(word1) - 1)]
         word_list2 = [word2[i:i + 2] for i in range(len(word2) - 1)]
         return wc.calc_jaccard(word_list1, word_list2)
 
-    def calc_edit_dist(self, word1: str, word2: str):
+    def edit_dist(self, word1: str, word2: str):
         """calculates the edit distance of two words"""
         return wc.calc_edit_distance(word1, word2)
 
     # part 5
-    def _score_docs(self, query_terms, zone='title'):
+    def _score_docs(self, query_terms, zone='title', docs: set = None):
         lang = self.lang
         dictionary = self.positional_indices if zone == 'description' else self.positional_indices_title
         collection_idx = 1 if zone == 'description' else 0
@@ -367,6 +375,8 @@ class MIR:
         result = dict()
         for term, term_score in zip(query_terms, query_scores):
             posting = dictionary.get(term, dict())
+            if docs is not None:
+                posting = {x: y for x, y in posting.items() if x in docs}
             for doc, positions in posting.items():
                 if doc not in result:
                     result[doc] = 0
@@ -389,8 +399,45 @@ class MIR:
         for doc_id, score in sorted(list(result.items())[:k], key=lambda x: x[1], reverse=True):
             print_match_doc(
                 doc_id=doc_id, score=score, description=self.collections[doc_id][1], title=self.collections[doc_id][0],
-                terms=query_terms, print_terms=False
+                terms=query_terms, print_terms=False, lang=lang
             )
 
-    def proximity_search(self, query: str, window: int = 5):
-        pass
+    def proximity_search(self, query: str, zone: str = 'title', window: int = 5):
+        """performs a proximity search for query - zone: ['title','description'], window: proximity window-size"""
+        lang = self.lang
+        dictionary = self.positional_indices if zone == 'description' else self.positional_indices_title
+        self.prepare_text(query, lang)  # print the query terms
+        query_terms = proc_text.prepare_text(query, lang, False)
+        if len(query_terms) < 2:
+            print('query should at least contain two terms')
+            return
+        answer = set()
+        for i in range(1, len(query_terms)):
+            last_positions = dictionary.get(query_terms[i - 1], dict())
+            cur_positions = dictionary.get(query_terms[i], dict())
+            cur_answer = set()
+            for doc in filter(lambda x: x in last_positions, cur_positions):
+                # positional intersection
+                for pos in cur_positions[doc]:
+                    for last_pos in last_positions[doc]:
+                        if last_pos < pos - window:
+                            continue
+                        if last_pos > pos + window:
+                            break
+                        if abs(pos - last_pos) <= window:
+                            cur_answer.add(doc)
+                            break
+            if i == 1:
+                answer = cur_answer
+            answer = set(filter(lambda x: x in answer, cur_answer))
+            if not answer:
+                break
+
+        result = self._score_docs(query_terms, zone, answer)
+        for doc_id, score in sorted(list(result.items()), key=lambda x: x[1], reverse=True):
+            print_match_doc(
+                doc_id=doc_id, score=score,
+                title=self.collections[doc_id][0] if zone == 'title' else None,
+                description=self.collections[doc_id][1] if zone == 'description' else None,
+                terms=query_terms, print_terms=False, lang=lang
+            )

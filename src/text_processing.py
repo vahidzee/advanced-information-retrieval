@@ -6,7 +6,6 @@ import hazm
 
 
 def prepare_text(text, lang, verbose=False):
-    # todo: return only terms (tokenized + stem + lemmatized)
     if lang == 'persian':
         punctuation_marks = ['!', '؟', '،', '.', '؛', ':', '«', '»', '<', '>', '-', '[', ']', '{', '}', '|', ')', '(',
                              '/', '=', '*', '\'', ',', '"', '`', '?']

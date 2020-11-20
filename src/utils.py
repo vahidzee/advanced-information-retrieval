@@ -67,13 +67,13 @@ def print_match_doc(doc_id: int, score: float = None, title: str = None, descrip
             HTML(f'\t<skyblue>Title Positions:</skyblue> <cyan>{", ".join(str(i) for i in positions_title)}</cyan>'))
 
     ftitle = highlight(title, terms_set, lang) if title and terms_set else title
-    if ftitle:
+    if ftitle and lang != 'persian':
         print_formatted_text(
             HTML(f'\t<skyblue>Title:</skyblue> {ftitle}'))
     if positions_description:
         print_formatted_text(HTML(f'\t<skyblue>Description Positions:</skyblue> \
 <cyan>{", ".join(str(i) for i in positions_description)}</cyan>'))
     fdescription = highlight(description, terms_set, lang) if description and terms_set else description
-    if fdescription:
+    if fdescription and lang != 'persian':
         print_formatted_text(
             HTML(f'\t<skyblue>Description:</skyblue>\n\t{fdescription}'))
