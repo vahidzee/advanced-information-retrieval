@@ -3,9 +3,10 @@ import nltk
 import string
 from nltk.stem import PorterStemmer
 import hazm
+import numpy as np
 
 
-def prepare_text(text, lang, verbose=False):
+def prepare_text(text, lang='eng', verbose=False):
     if lang == 'persian':
         punctuation_marks = ['!', '؟', '،', '.', '؛', ':', '«', '»', '<', '>', '-', '[', ']', '{', '}', '|', ')', '(',
                              '/', '=', '*', '\'', ',', '"', '`', '?']
@@ -43,6 +44,19 @@ def prepare_text(text, lang, verbose=False):
         if verbose:
             print('Tokens:', clean_tokens)
         return clean_tokens
+
+
+def vocab(docs):
+    vocab_dict = dict()
+    for doc in docs:
+        for i in doc:
+            if i not in vocab_dict:
+                vocab_dict[i] = 0
+            vocab_dict[i] += 1
+    idxs = sorted(vocab_dict)
+    for i, j in enumerate(idxs):
+        vocab_dict[j] = i, vocab_dict[j]
+    return vocab_dict
 
 
 def bigram_word(word):

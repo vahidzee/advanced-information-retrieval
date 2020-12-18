@@ -1,20 +1,23 @@
 from __future__ import unicode_literals
 
-import collections
-
+import numpy as np
 import pandas as pd
 import xml.etree.ElementTree as ET
 import pickle
-
+import warnings
 import src.compression as compress
 import src.text_processing as proc_text
 from prompt_toolkit.shortcuts import ProgressBar
 from prompt_toolkit import print_formatted_text, HTML
 import src.word_correction as wc
-from src.vector_space import score_query, scale_lnc, logarithmic
+from src.vector_space import score_query, scale_lnc, logarithmic, ntn_vectorize
 from pathlib import Path
-from src.utils import print_match_doc
+from src.utils import print_match_doc, print_evaluation_results, mix_evaluation_results
+import src.classifiers as classifiers
 import os
+
+warnings.filterwarnings('ignore')
+RANDOM_SEED = 666
 
 
 class MIR:
@@ -44,9 +47,21 @@ class MIR:
         self.coded_add = 'outputs/coded.pickle'
         self.coded_title_add = 'outputs/coded_titles.pickle'
 
+        # phase2
+        self.train_term_mapping = None  # vocabulary out of train & val data (dict of <term: sorted_idx>)
+        self.test_term_mapping = None  # vocabulary mapping out of test  (dict of <term: sorted_idx>)
+        self.talks_term_mapping = None  # vocabulary mapping out of test  (dict of <term: sorted_idx>)
+        self.train_ratio = 0.9  # how much of the train.csv should be accounted for training
+        self.train_vectors = None  # ntn_vectors , views
+        self.val_vectors = None  # ntn_vectors , views
+        self.test_vectors = None
+        self.talks_vectors = None
+        self.models = list()
+        self.best_model = None
+
     # part 0
     def _load_talks(self, pb=None):
-        talks = pd.read_csv(f'{self.files_root}/ted_talks.csv')
+        talks = pd.read_csv(f'{self.files_root}/talks.csv')
         ted_talk_title = talks['title'].to_list()
         ted_talk_desc = talks['description'].to_list()
         for talk_id in pb(range(len(ted_talk_title)), label='Ted Talks') if pb is not None else range(
@@ -153,6 +168,7 @@ class MIR:
         self._insert_position(terms_title, self.positional_indices_title, doc_id)
         return doc_id
 
+    # todo: phase2?
     def insert(self, title: str, description: str):
         """inserts a document into the collection - title: document title, description: document's description"""
         doc_id = self._insert(title, description)
@@ -169,6 +185,7 @@ class MIR:
         for kdl in keys_to_del:
             del dictionary[kdl]
 
+    # todo: phase2?
     def delete(self, doc_id: int):
         """deletes a document from the collection - doc_id: document's identifier"""
         lang = self.lang
@@ -206,8 +223,10 @@ class MIR:
             f'{x[0]}({x[1] / word_freq * 100.:.04f}%)' for x in sorted(stop_words, key=lambda x: x[1], reverse=True)))
 
     # part 2
-    def posting_list_by_word(self, word: str):
+    def posting_list_by_word(self, word: str, views: int = None):
         """retrieves posting list based on given word"""
+        if views is not None and (self.talks_vectors is None or self.talks_vectors[-1] is None):
+            self.classify()
         lang = self.lang
         if not self.dataset_loaded:
             self.prepare_text(word, lang)
@@ -215,6 +234,8 @@ class MIR:
         term = proc_text.prepare_text(word, lang, verbose=False)[0]
         print_formatted_text(HTML(f'<skyblue>Term:</skyblue> <cyan>{term}</cyan>'))
         for idx, values in self.positional_indices_title.get(term, dict()).items():
+            if views is not None and self._filtered(idx, views):
+                continue
             print_match_doc(
                 idx, positions_title=values, title=self.collections[idx][0], terms=[term],
                 print_terms=False, lang=lang,
@@ -222,6 +243,8 @@ class MIR:
                 positions_description=self.positional_indices.get(term, dict()).get(idx, tuple())
             )
         for idx, values in self.positional_indices.get(term, dict()).items():
+            if views is not None and self._filtered(idx, views):  # filtering by views
+                continue
             if idx in self.positional_indices_title.get(term, set()):
                 continue
             print_match_doc(idx, positions_description=values, description=self.collections[idx][1], terms=[term],
@@ -386,8 +409,10 @@ class MIR:
             result[doc] /= scale_lnc(self.collections[doc][collection_idx], lang)
         return result
 
-    def sort_by_relevance(self, query: str, k: int = 10):
+    def sort_by_relevance(self, query: str, k: int = 10, views: int = None):
         """find top-k relevant documents based on search"""
+        if views is not None and (self.talks_vectors is None or self.talks_vectors[-1] is None):
+            self.classify()
         lang = self.lang
         self.prepare_text(query, lang)  # print the query terms
         query_terms = proc_text.prepare_text(query, lang, False)
@@ -395,6 +420,8 @@ class MIR:
         description_scores = self._score_docs(query_terms, 'description')
         result = dict()
         for doc in description_scores:
+            if views is not None and self._filtered(doc, views):  # filtering by views
+                continue
             result[doc] = description_scores[doc] + title_scores.get(doc, 0)
         for doc_id, score in sorted(list(result.items())[:k], key=lambda x: x[1], reverse=True):
             print_match_doc(
@@ -402,7 +429,7 @@ class MIR:
                 terms=query_terms, print_terms=False, lang=lang
             )
 
-    def proximity_search(self, query: str, zone: str = 'title', window: int = 5):
+    def proximity_search(self, query: str, zone: str = 'title', window: int = 5, views: int = None):
         """performs a proximity search for query - zone: ['title','description'], window: proximity window-size"""
         lang = self.lang
         dictionary = self.positional_indices if zone == 'description' else self.positional_indices_title
@@ -432,7 +459,8 @@ class MIR:
             answer = set(filter(lambda x: x in answer, cur_answer))
             if not answer:
                 break
-
+        if views is not None:
+            answer = self._filter_resulting_talks(answer, views)
         result = self._score_docs(query_terms, zone, answer)
         for doc_id, score in sorted(list(result.items()), key=lambda x: x[1], reverse=True):
             print_match_doc(
@@ -441,3 +469,84 @@ class MIR:
                 description=self.collections[doc_id][1] if zone == 'description' else None,
                 terms=query_terms, print_terms=False, lang=lang
             )
+
+    # phase 2
+    # part 1
+    def _init_data(self, split='train'):
+        data = pd.read_csv(f'files/{split}.csv')[['title', 'description', 'views']]
+        data = pd.DataFrame(
+            {'terms': (data['title'] + ' ' + data['description']).apply(proc_text.prepare_text),
+             'views': data['views']})
+        data['terms'] = data['terms'].apply(lambda x: {i: x.count(i) for i in x})
+        vocab = proc_text.vocab(data['terms'])
+        setattr(self, f'{split}_term_mapping', {x: y[0] for x, y in vocab.items()})
+        if split == 'train':
+            self.train_data = data.sample(frac=self.train_ratio, random_state=RANDOM_SEED)
+            self.val_data = data.drop(self.train_data.index)
+            self.train_vectors = ntn_vectorize(self.train_data, vocab)
+            self.val_vectors = ntn_vectorize(self.val_data, vocab)
+            self.train_term_mapping = {x: y[0] for x, y in vocab.items()}
+        elif split == 'test':
+            self.test_data = data
+            self.test_vectors = ntn_vectorize(data, vocab)
+        elif split == 'talks':
+            self.talks_vectors = ntn_vectorize(data, vocab)
+
+    def init_data(self):
+        """initialize the train, val and test data splits for classification"""
+        self._init_data('train')
+        self._init_data('test')
+        self._init_data('talks')
+
+    def fit_models(self):
+        """fit models on data"""
+        self.models.append(classifiers.NaiveBayes())
+        self.models.append(classifiers.KNN())
+        for model in self.models:
+            model.fit(*self.train_vectors, self.train_term_mapping)
+
+    def fine_tune_models(self):
+        """fine-tune models hyper parameters based on the validation split"""
+        for model in self.models:
+            print_formatted_text(HTML(f'<skyblue>Fine tuning:</skyblue> <cyan>{model}</cyan>'))
+            model.fine_tune(*self.val_vectors, self.train_term_mapping)
+            print_formatted_text(HTML(f'\tFine tuned: <bold>{model}</bold>'))
+            break
+
+    # part 2
+    def classify(self):
+        """classify the talks dataset with the best model"""
+        if self.test_vectors is None:
+            self.init_data()
+        if not self.models:
+            self.fit_models()
+            self.fine_tune_models()
+        if self.best_model is None:
+            self.evaluate_models()
+        self.talks_vectors = self.talks_vectors[0], self.talks_vectors[1], self.best_model.classify(
+            self.talks_vectors[0], self.train_vectors[1], self.talks_term_mapping)
+
+    def _filter_resulting_talks(self, results, views):
+        if self.test_vectors is None or self.test_vectors[-1] is None:
+            self.classify()
+        docs = set(np.arange(len(self.talks_vectors[0]))[self.talks_vectors[-1] == views])
+        return set(filter(lambda x: x in docs, results))
+
+    def _filtered(self, doc_id, views):
+        return self.talks_vectors[-1][doc_id] != views
+
+    # part 3
+    def evaluate_models(self):
+        """evaluate the models and find the best one"""
+        best_accuracy = 0.
+        for model in self.models:
+            test_res = model.evaluate(self.test_vectors[0], self.train_vectors[1], self.test_vectors[-1],
+                                      self.test_term_mapping)
+            if test_res['accuracy'] > best_accuracy:
+                self.best_model = model
+                best_accuracy = test_res['accuracy']
+            val_res = model.evaluate(*self.val_vectors, self.train_term_mapping)
+            train_res = model.evaluate(*self.train_vectors, self.train_term_mapping)
+            result = mix_evaluation_results(train_results=train_res, val_results=val_res, test_results=test_res)
+            print_evaluation_results(model, result)
+            break

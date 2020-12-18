@@ -1,5 +1,6 @@
 import math
 from .text_processing import prepare_text
+import numpy as np
 
 log = math.log10
 
@@ -29,3 +30,16 @@ def score_query(query_terms: list, dictionary: dict, n: int):
     dfs = [len(dictionary.get(term, dict())) for term in query_terms]
     tfs = [query_terms.count(term) for term in query_terms]
     return ltc(tfs, dfs, n)
+
+
+def ntn_vectorize(data, vocab_dict):
+    data_terms = data['terms']
+    tf = np.zeros((len(data_terms), len(vocab_dict)))
+    idf = np.zeros((len(vocab_dict),))
+    for (idx, df) in vocab_dict.values():
+        idf[idx] = df
+    idf = np.log(idf)
+    for i, terms in enumerate(data_terms):
+        for term in terms:
+            tf[i][vocab_dict[term][0]] = terms[term]
+    return tf, idf, data['views'].to_numpy() if 'views' in data else None
