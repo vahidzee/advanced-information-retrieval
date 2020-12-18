@@ -77,3 +77,39 @@ def print_match_doc(doc_id: int, score: float = None, title: str = None, descrip
     if fdescription and lang != 'persian':
         print_formatted_text(
             HTML(f'\t<skyblue>Description:</skyblue>\n\t{fdescription}'))
+
+
+def values_to_str(value):
+    return ', '.join(f'{y * 100:0.04f}% ({x})' for x, y in value)
+
+
+def print_evaluation_results(model, results: dict, split='test'):
+    print_formatted_text(
+        HTML(f'<skyblue>model:</skyblue> <cyan>{model}</cyan>'))
+    tab = '    '
+    for item, value in results.items():
+        if isinstance(value[0][1], list):
+            print_formatted_text(HTML(f'{tab}* <skyblue>{item}:</skyblue>'))
+            for i, j in value:
+                print_formatted_text(HTML(f'{tab}  - <skyblue>{i}:</skyblue> {values_to_str(j)}'))
+        else:
+            print_formatted_text(HTML(f'{tab}* <skyblue>{item}:</skyblue> {values_to_str(value)}'))
+
+
+def mix_evaluation_results(train_results=None, test_results=None, val_results=None):
+    src = []
+    if test_results is not None:
+        src.append(('test', test_results))
+    if val_results is not None:
+        src.append(('val', val_results))
+    if train_results is not None:
+        src.append(('train', train_results))
+
+    results = {
+        'accuracy': [(x, y['accuracy']) for x, y in src]
+    }
+    for cls_type in ['pos', 'neg']:
+        results[cls_type] = []
+        for item in ['precision', 'recall', 'f1']:
+            results[cls_type].append((item, [(x, y[cls_type][item]) for x, y in src]))
+    return results
