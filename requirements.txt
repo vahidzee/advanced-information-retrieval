@@ -2,3 +2,4 @@ pandas
 nltk
 hazm
 prompt_toolkit
+numpy
