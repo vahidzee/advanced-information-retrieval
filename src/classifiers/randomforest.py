@@ -14,6 +14,7 @@ class RandomForest(Classifier):
         self.train_idf = None
         self.train_classes = None
         self.num_estimators = 100
+        self.criterion = 'gini'
         self.max_depth = 5
 
     def fit(self, tf=None, idf=None, classes=None, terms_mapping=None):
@@ -23,7 +24,7 @@ class RandomForest(Classifier):
         if self.train_tf is None:
             self.train_tf, self.train_idf, self.train_classes, self.term_mapping = tf, idf, classes, terms_mapping
         self.clf = RandomForestClassifier(n_estimators=self.num_estimators, max_depth=self.max_depth,
-                                          random_state=RANDOM_SEED)
+                                          random_state=RANDOM_SEED, criterion=self.criterion)
         self.clf.fit(tf * idf, classes)
 
     def classify(self, tf, idf, terms_mapping, **kwargs) -> np.array:
@@ -37,7 +38,7 @@ class RandomForest(Classifier):
         metric = []
         pb = ProgressBar()
         pb.__enter__()
-        for k in pb(range(5, 110, 20), label='finding best depth'):
+        for k in pb(range(5, 110, 20), label='Finding best depth'):
             self.max_depth = k
             self.fit()
             metric.append((self.evaluate(tf, idf, classes, terms_mapping, pb=pb)[self.fine_tune_metric], k))

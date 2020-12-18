@@ -494,9 +494,11 @@ class MIR:
 
     def init_data(self):
         """initialize the train, val and test data splits for classification"""
-        self._init_data('train')
-        self._init_data('test')
-        self._init_data('talks')
+        pb = ProgressBar()
+        pb.__enter__()
+        for split in pb(['train', 'test', 'talks'], label='loading data splits:'):
+            self._init_data(split)
+        pb.__exit__()
 
     def fit_models(self):
         """fit models on data"""
@@ -512,7 +514,6 @@ class MIR:
             print_formatted_text(HTML(f'<skyblue>Fine tuning:</skyblue> <cyan>{model}</cyan>'))
             model.fine_tune(*self.val_vectors, self.train_term_mapping)
             print_formatted_text(HTML(f'\tFine tuned: <bold>{model}</bold>'))
-            # break
 
     # part 2
     def classify(self):
