@@ -98,7 +98,8 @@ def print_evaluation_results(model, results: dict):
 
 
 def mix_evaluation_results(res: collections.OrderedDict):
-    results = {'accuracy': [(x, y['accuracy']) for x, y in res.items()]}
+    results = {'accuracy': [(x, y['accuracy']) for x, y in res.items()],
+               'f1-macro': [(x, y['f1-macro']) for x, y in res.items()]}
     for cls_type in ['pos', 'neg']:
         results[cls_type] = []
         for item in ['precision', 'recall', 'f1']:
