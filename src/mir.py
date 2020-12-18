@@ -56,7 +56,7 @@ class MIR:
         self.val_vectors = None  # ntn_vectors , views
         self.test_vectors = None
         self.talks_vectors = None
-        self.models = list()
+        self.models = dict(nb=None, rf=None, svm=None, knn=None)
         self.best_model = None
 
     # part 0
@@ -500,33 +500,65 @@ class MIR:
             self._init_data(split)
         pb.__exit__()
 
-    def fit_models(self):
-        """fit models on data"""
-        self.models.append(classifiers.NaiveBayes())
-        # self.models.append(classifiers.KNN())
-        self.models.append(classifiers.RandomForest())
-        for model in self.models:
-            model.fit(*self.train_vectors, self.train_term_mapping)
+    def _suggest_models(self, args):
+        if not args or not args[0]:
+            return ['nb', 'rf', 'svm', 'knn']
+        if len(args) > 1:
+            return []
+        return ['nb', 'rf', 'svm', 'knn']
 
-    def fine_tune_models(self):
+    def fit_models(self, model: str = None, model_args: dict = None):
+        """fit models on data"""
+        if model is None:
+            models = ['nb', 'rf', 'svm', 'knn']
+        else:
+            models = [model]
+        pb = ProgressBar()
+        pb.__enter__()
+        for model_type in pb(models, label='Fitting models' if model is None else f'Fitting {model}'):
+            self.models[model_type] = getattr(classifiers, model_type.upper())
+            if model is not None:
+                model_args = model_args or dict()
+                self.models[model_type] = self.models[model_type](**model_args)
+            else:
+                self.models[model_type] = self.models[model_type]()
+            self.models[model_type].fit(*self.train_vectors, self.train_term_mapping)
+        pb.__exit__()
+
+    def fine_tune_models(self, model: str = None):
         """fine-tune models hyper parameters based on the validation split"""
-        for model in self.models:
+        if model is None:
+            models = ['nb', 'rf', 'svm', 'knn']
+        else:
+            models = [model]
+        for model_type, model in self.models.items():
+            if model_type not in models:
+                continue
             print_formatted_text(HTML(f'<skyblue>Fine tuning:</skyblue> <cyan>{model}</cyan>'))
             model.fine_tune(*self.val_vectors, self.train_term_mapping)
             print_formatted_text(HTML(f'\tFine tuned: <bold>{model}</bold>'))
 
+    def fine_tune_models_suggestion(self, args):
+        return self._suggest_models(args)
+
     # part 2
-    def classify(self):
+    def classify(self, model=None):
         """classify the talks dataset with the best model"""
         if self.test_vectors is None:
             self.init_data()
-        if not self.models:
+        if any(map(lambda x: x is None, self.models.values())) and model is None:
             self.fit_models()
             self.fine_tune_models()
-        if self.best_model is None:
+        if model is None and self.best_model is None:
             self.evaluate_models()
-        self.talks_vectors = self.talks_vectors[0], self.talks_vectors[1], self.best_model.classify(
+        elif model is not None and self.models[model] is None:
+            self.fit_models(model)
+        clf = self.models[model] if model is not None else self.best_model
+        self.talks_vectors = self.talks_vectors[0], self.talks_vectors[1], clf.classify(
             self.talks_vectors[0], self.train_vectors[1], self.talks_term_mapping)
+
+    def classify_suggestion(self, args):
+        return self._suggest_models(args)
 
     def _filter_resulting_talks(self, results, views):
         if self.test_vectors is None or self.test_vectors[-1] is None:
@@ -538,10 +570,16 @@ class MIR:
         return self.talks_vectors[-1][doc_id] != views
 
     # part 3
-    def evaluate_models(self):
+    def evaluate_models(self, model=None):
         """evaluate the models and find the best one"""
         best_accuracy = 0.
-        for model in self.models:
+        if model is None:
+            models = {'nb', 'rf', 'svm', 'knn'}
+        else:
+            models = [model]
+        for model_type, model in self.models.items():
+            if model_type not in models:
+                continue
             test_res = model.evaluate(self.test_vectors[0], self.train_vectors[1], self.test_vectors[-1],
                                       self.test_term_mapping)
             if test_res['accuracy'] > best_accuracy:
@@ -551,4 +589,6 @@ class MIR:
             train_res = model.evaluate(*self.train_vectors, self.train_term_mapping)
             result = mix_evaluation_results(train_results=train_res, val_results=val_res, test_results=test_res)
             print_evaluation_results(model, result)
-            # break
+
+    def evaluate_suggestion(self, args):
+        return self._suggest_models(args)
