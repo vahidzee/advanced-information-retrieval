@@ -507,7 +507,7 @@ class MIR:
         return ['nb', 'rf', 'svm', 'knn']
 
     def fit_models(self, model: str = None, model_args: dict = None):
-        """fit models on data"""
+        """fit available models or specified model on train-data - [model:name], [model_args:dict of model args]"""
         if model is None:
             models = ['nb', 'rf', 'svm', 'knn']
         else:
@@ -524,8 +524,8 @@ class MIR:
             self.models[model_type].fit(*self.train_vectors, self.train_term_mapping)
         pb.__exit__()
 
-    def fine_tune_models(self, model: str = None, verbose=True):
-        """fine-tune models hyper parameters based on the validation split"""
+    def fine_tune_models(self, model: str = None):
+        """fine-tune available models or specified model hyper-parameters based on the validation split"""
         if model is None:
             models = ['nb', 'rf', 'svm', 'knn']
         else:
@@ -535,16 +535,15 @@ class MIR:
                 continue
             print_formatted_text(HTML(f'<skyblue>Fine tuning:</skyblue> <cyan>{model}</cyan>'))
             results = model.fine_tune(*self.val_vectors, self.train_term_mapping)
-            if verbose:
-                print_evaluation_results(model, mix_evaluation_results(results))
             print_formatted_text(HTML(f'\tFine tuned: <bold>{model}</bold>'))
+            print_evaluation_results(model, mix_evaluation_results(results))
 
     def fine_tune_models_suggestion(self, args):
         return self._suggest_models(args)
 
     # part 2
     def classify(self, model=None):
-        """classify the talks dataset with the best model"""
+        """classify the talks dataset with the best or specified model - [model:name]"""
         if self.test_vectors is None:
             self.init_data()
         if any(map(lambda x: x is None, self.models.values())) and model is None:
@@ -573,7 +572,7 @@ class MIR:
 
     # part 3
     def evaluate_models(self, model=None):
-        """evaluate the models and find the best one"""
+        """evaluate available models or specified model and update the best-model if needed - [model:name]"""
         best_accuracy = 0.
         if model is None:
             models = {'nb', 'rf', 'svm', 'knn'}

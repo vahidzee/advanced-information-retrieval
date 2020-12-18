@@ -31,7 +31,7 @@ class NaiveBayes(Classifier):
         pb = ProgressBar()
         pb.__enter__()
         evaluation = collections.OrderedDict()
-        for k in pb(range(1, 6), label='Finding best smoothing k'):
+        for k in pb(range(0, 6), label='Finding best smoothing k'):
             self.laplace_k = k
             results = self.evaluate(tf, idf, classes, terms_mapping)
             evaluation[k] = results
