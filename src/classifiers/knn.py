@@ -58,10 +58,12 @@ class KNN(Classifier):
     def fine_tune(self, tf, idf, classes, terms_mapping):
         metric = []
         self.fine_tune_mode = True
-        with ProgressBar() as pb:
-            for k in pb(range(2, 100), 'Finding best k'):
-                self.k = k
-                metric.append((self.evaluate(tf, idf, classes, terms_mapping, pb=pb)[self.fine_tune_metric], k))
+        pb = ProgressBar()
+        pb.__enter__()
+        for k in pb(range(2, 100), 'Finding best k'):
+            self.k = k
+            metric.append((self.evaluate(tf, idf, classes, terms_mapping, pb=pb)[self.fine_tune_metric], k))
+        pb.__exit__()
         self.fine_tune_mode = False
         self.cache = None
         self.k = max(metric)[1]

@@ -26,7 +26,7 @@ class NaiveBayes(Classifier):
 
     def fine_tune(self, tf, idf, classes, terms_mapping):
         metric = []
-        for k in [1e-4, 1e-3, 1e-2, 5e-1, 1, 2, 3]:
+        for k in [1e-4, 1e-3, 1e-2, 5e-1, 1, 2, 3, 4, 5, 6]:
             self.laplace_k = k
             metric.append((self.evaluate(tf, idf, classes, terms_mapping)[self.fine_tune_metric], k))
         self.laplace_k = max(metric)[1]

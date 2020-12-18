@@ -501,7 +501,8 @@ class MIR:
     def fit_models(self):
         """fit models on data"""
         self.models.append(classifiers.NaiveBayes())
-        self.models.append(classifiers.KNN())
+        # self.models.append(classifiers.KNN())
+        self.models.append(classifiers.RandomForest())
         for model in self.models:
             model.fit(*self.train_vectors, self.train_term_mapping)
 
@@ -511,7 +512,7 @@ class MIR:
             print_formatted_text(HTML(f'<skyblue>Fine tuning:</skyblue> <cyan>{model}</cyan>'))
             model.fine_tune(*self.val_vectors, self.train_term_mapping)
             print_formatted_text(HTML(f'\tFine tuned: <bold>{model}</bold>'))
-            break
+            # break
 
     # part 2
     def classify(self):
@@ -549,4 +550,4 @@ class MIR:
             train_res = model.evaluate(*self.train_vectors, self.train_term_mapping)
             result = mix_evaluation_results(train_results=train_res, val_results=val_res, test_results=test_res)
             print_evaluation_results(model, result)
-            break
+            # break
