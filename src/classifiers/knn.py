@@ -7,7 +7,7 @@ from sklearn.decomposition import PCA
 
 
 class KNN(Classifier):
-    def __init__(self, k=1, cos_similarity=False, low_memory=False, pca=0, term_mapping=None):
+    def __init__(self, k=1, cos_similarity=True, low_memory=True, pca=0, term_mapping=None):
         super().__init__(term_mapping)
         self.k = k
         self.cos_similarity = cos_similarity
@@ -38,9 +38,10 @@ class KNN(Classifier):
         result = []
         for v in pb(vectors, label='Finding nearest neighbours') if pb is not None else vectors:
             if self.cos_similarity:
-                result.append((v * self.train_data).sum(-1))
+                result.append(np.stack([(v * self.train_data[i]).sum(-1) for i in range(self.train_data.shape[0])]))
             else:
-                result.append(np.square(v - self.train_data).sum(-1))
+                result.append(
+                    np.stack([np.square(v - self.train_data[i]).sum(-1) for i in range(self.train_data.shape[0])]))
         return np.stack(result)
 
     def classify(self, tf, idf, terms_mapping, pb=None) -> np.array:

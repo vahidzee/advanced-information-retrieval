@@ -589,7 +589,7 @@ class MIR:
                 best_accuracy = test_res['accuracy']
             val_res = model.evaluate(*self.val_vectors, self.train_term_mapping)
             train_res = model.evaluate(*self.train_vectors, self.train_term_mapping)
-            res = collections.OrderedDict(train=train_res, val=val_res, test=test_res)
+            res = collections.OrderedDict(test=test_res, val=val_res, train=train_res)
             result = mix_evaluation_results(res)
             print_evaluation_results(model, result)
 

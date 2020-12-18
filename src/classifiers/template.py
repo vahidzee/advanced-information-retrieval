@@ -42,7 +42,9 @@ class Classifier(abc.ABC):
         return {
             'accuracy': accuracy,
             'pos': {'precision': pos_precision, 'recall': pos_recall, 'f1': pos_f1},
-            'neg': {'precision': neg_precision, 'recall': neg_recall, 'f1': neg_f1}, }
+            'neg': {'precision': neg_precision, 'recall': neg_recall, 'f1': neg_f1},
+            'f1-macro': (pos_f1 + neg_f1) / 2
+        }
 
     def __repr__(self):
         return f'{self.__class__.__name__}'
