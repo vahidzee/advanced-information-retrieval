@@ -1,6 +1,7 @@
 from .template import Classifier
 import numpy as np
 from prompt_toolkit.shortcuts import ProgressBar
+import collections
 
 
 class NaiveBayes(Classifier):
@@ -29,11 +30,15 @@ class NaiveBayes(Classifier):
         metric = []
         pb = ProgressBar()
         pb.__enter__()
-        for k in pb(range(1, 30), label='Finding best smoothing k'):
+        evaluation = collections.OrderedDict()
+        for k in pb(range(1, 6), label='Finding best smoothing k'):
             self.laplace_k = k
-            metric.append((self.evaluate(tf, idf, classes, terms_mapping)[self.fine_tune_metric], k))
+            results = self.evaluate(tf, idf, classes, terms_mapping)
+            evaluation[k] = results
+            metric.append((results[self.fine_tune_metric], k))
         pb.__exit__()
         self.laplace_k = max(metric)[1]
+        return evaluation
 
     def __repr__(self):
         return f'{self.__class__.__name__}-smoothing={self.laplace_k}'

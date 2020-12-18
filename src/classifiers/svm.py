@@ -1,3 +1,5 @@
+import collections
+
 from sklearn.svm import SVC
 from .template import Classifier
 from sklearn.decomposition import PCA
@@ -44,12 +46,16 @@ class SVM(Classifier):
         metric = []
         pb = ProgressBar()
         pb.__enter__()
+        evaluation = collections.OrderedDict()
         for c in pb(np.linspace(0.5, 2, 4), label='Finding best C'):
             self.c = c
             self.fit()
-            metric.append((self.evaluate(tf, idf, classes, terms_mapping, pb=pb)[self.fine_tune_metric], c))
+            results = self.evaluate(tf, idf, classes, terms_mapping, pb=pb)
+            evaluation[c] = results
+            metric.append((results[self.fine_tune_metric], c))
         pb.__exit__()
         self.c = max(metric)[1]
+        return evaluation
 
     def __repr__(self):
         return f'{self.__class__.__name__}-C={self.c}'

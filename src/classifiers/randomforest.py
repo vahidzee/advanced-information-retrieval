@@ -2,6 +2,7 @@ from sklearn.ensemble import RandomForestClassifier
 from .template import Classifier
 from prompt_toolkit.shortcuts import ProgressBar
 import numpy as np
+import collections
 
 RANDOM_SEED = 666
 
@@ -37,13 +38,17 @@ class RandomForest(Classifier):
     def fine_tune(self, tf, idf, classes, terms_mapping):
         metric = []
         pb = ProgressBar()
+        evaluation = collections.OrderedDict()
         pb.__enter__()
         for k in pb(range(5, 110, 20), label='Finding best depth'):
             self.max_depth = k
             self.fit()
-            metric.append((self.evaluate(tf, idf, classes, terms_mapping, pb=pb)[self.fine_tune_metric], k))
+            results = self.evaluate(tf, idf, classes, terms_mapping)
+            evaluation[k] = results
+            metric.append((results[self.fine_tune_metric], k))
         pb.__exit__()
         self.max_depth = max(metric)[1]
+        return evaluation
 
     def __repr__(self):
         return f'{self.__class__.__name__}-max-depth={self.max_depth}'

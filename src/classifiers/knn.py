@@ -1,3 +1,5 @@
+import collections
+
 from .template import Classifier
 import numpy as np
 from prompt_toolkit.shortcuts import ProgressBar
@@ -67,13 +69,17 @@ class KNN(Classifier):
         self.fine_tune_mode = True
         pb = ProgressBar()
         pb.__enter__()
-        for k in pb(range(2, 100), 'Finding best k'):
+        evaluation = collections.OrderedDict()
+        for k in pb([1, 5, 9], 'Finding best k'):
             self.k = k
-            metric.append((self.evaluate(tf, idf, classes, terms_mapping, pb=pb)[self.fine_tune_metric], k))
+            results = self.evaluate(tf, idf, classes, terms_mapping, pb=pb)
+            evaluation[k] = results
+            metric.append((results[self.fine_tune_metric], k))
         pb.__exit__()
         self.fine_tune_mode = False
         self.cache = None
         self.k = max(metric)[1]
+        return evaluation
 
     def __repr__(self):
         return f'{self.__class__.__name__}-k={self.k}'

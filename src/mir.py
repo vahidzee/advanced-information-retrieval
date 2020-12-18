@@ -15,6 +15,7 @@ from pathlib import Path
 from src.utils import print_match_doc, print_evaluation_results, mix_evaluation_results
 import src.classifiers as classifiers
 import os
+import collections
 
 warnings.filterwarnings('ignore')
 RANDOM_SEED = 666
@@ -168,7 +169,6 @@ class MIR:
         self._insert_position(terms_title, self.positional_indices_title, doc_id)
         return doc_id
 
-    # todo: phase2?
     def insert(self, title: str, description: str):
         """inserts a document into the collection - title: document title, description: document's description"""
         doc_id = self._insert(title, description)
@@ -185,7 +185,6 @@ class MIR:
         for kdl in keys_to_del:
             del dictionary[kdl]
 
-    # todo: phase2?
     def delete(self, doc_id: int):
         """deletes a document from the collection - doc_id: document's identifier"""
         lang = self.lang
@@ -525,7 +524,7 @@ class MIR:
             self.models[model_type].fit(*self.train_vectors, self.train_term_mapping)
         pb.__exit__()
 
-    def fine_tune_models(self, model: str = None):
+    def fine_tune_models(self, model: str = None, verbose=True):
         """fine-tune models hyper parameters based on the validation split"""
         if model is None:
             models = ['nb', 'rf', 'svm', 'knn']
@@ -535,7 +534,9 @@ class MIR:
             if model_type not in models:
                 continue
             print_formatted_text(HTML(f'<skyblue>Fine tuning:</skyblue> <cyan>{model}</cyan>'))
-            model.fine_tune(*self.val_vectors, self.train_term_mapping)
+            results = model.fine_tune(*self.val_vectors, self.train_term_mapping)
+            if verbose:
+                print_evaluation_results(model, mix_evaluation_results(results))
             print_formatted_text(HTML(f'\tFine tuned: <bold>{model}</bold>'))
 
     def fine_tune_models_suggestion(self, args):
@@ -553,6 +554,7 @@ class MIR:
             self.evaluate_models()
         elif model is not None and self.models[model] is None:
             self.fit_models(model)
+            self.fine_tune_models(model)
         clf = self.models[model] if model is not None else self.best_model
         self.talks_vectors = self.talks_vectors[0], self.talks_vectors[1], clf.classify(
             self.talks_vectors[0], self.train_vectors[1], self.talks_term_mapping)
@@ -587,7 +589,8 @@ class MIR:
                 best_accuracy = test_res['accuracy']
             val_res = model.evaluate(*self.val_vectors, self.train_term_mapping)
             train_res = model.evaluate(*self.train_vectors, self.train_term_mapping)
-            result = mix_evaluation_results(train_results=train_res, val_results=val_res, test_results=test_res)
+            res = collections.OrderedDict(train=train_res, val=val_res, test=test_res)
+            result = mix_evaluation_results(res)
             print_evaluation_results(model, result)
 
     def evaluate_suggestion(self, args):

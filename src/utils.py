@@ -1,5 +1,6 @@
 from prompt_toolkit import print_formatted_text, HTML
 from .text_processing import prepare_text
+import collections
 
 
 def boolify(s):
@@ -83,7 +84,7 @@ def values_to_str(value):
     return ', '.join(f'{y * 100:0.04f}% ({x})' for x, y in value)
 
 
-def print_evaluation_results(model, results: dict, split='test'):
+def print_evaluation_results(model, results: dict):
     print_formatted_text(
         HTML(f'<skyblue>model:</skyblue> <cyan>{model}</cyan>'))
     tab = '    '
@@ -96,20 +97,10 @@ def print_evaluation_results(model, results: dict, split='test'):
             print_formatted_text(HTML(f'{tab}* <skyblue>{item}:</skyblue> {values_to_str(value)}'))
 
 
-def mix_evaluation_results(train_results=None, test_results=None, val_results=None):
-    src = []
-    if test_results is not None:
-        src.append(('test', test_results))
-    if val_results is not None:
-        src.append(('val', val_results))
-    if train_results is not None:
-        src.append(('train', train_results))
-
-    results = {
-        'accuracy': [(x, y['accuracy']) for x, y in src]
-    }
+def mix_evaluation_results(res: collections.OrderedDict):
+    results = {'accuracy': [(x, y['accuracy']) for x, y in res.items()]}
     for cls_type in ['pos', 'neg']:
         results[cls_type] = []
         for item in ['precision', 'recall', 'f1']:
-            results[cls_type].append((item, [(x, y[cls_type][item]) for x, y in src]))
+            results[cls_type].append((item, [(x, y[cls_type][item]) for x, y in res.items()]))
     return results
