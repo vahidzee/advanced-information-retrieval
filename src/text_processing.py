@@ -5,23 +5,35 @@ from nltk.stem import PorterStemmer
 import hazm
 import numpy as np
 
+hazm_normalizer = hazm.Normalizer()
+hazm_stemmer = hazm.Stemmer()
+hazm_lemmatizer = hazm.Lemmatizer()
+
+persian_puncts = '\u060C\u061B\u061F\u0640\u066A\u066B\u066C'
+persian_numerics = '\u06F0\u06F1\u06F2\u06F3\u06F4\u06F5\u06F6\u06F7\u06F8\u06F9'
+english_numerics = '0123456789'
+chars_to_remove = string.punctuation + persian_puncts + persian_numerics + english_numerics
+persian_conjuction = {'از', 'به', 'با', 'بر', 'برای', 'در', 'و', 'که', 'را'}
+persian_translator = str.maketrans('', '', chars_to_remove)
+
+
+def persian_terms(text, stem=False, lemmatize=False, remove_conjunctions=False, join=None):
+    normalized_text = hazm_normalizer.normalize(text.translate(persian_translator))
+    result = hazm.word_tokenize(normalized_text)
+    if stem:
+        result = [hazm_stemmer.stem(x) for x in result]
+    if lemmatize:
+        result = [hazm_lemmatizer.lemmatize(x) for x in result]
+    if remove_conjunctions:
+        result = [x for x in result if x not in persian_conjuction]
+    if join is not None:
+        return join.join(result)
+    return result
+
 
 def prepare_text(text, lang='eng', verbose=False):
     if lang == 'persian':
-        punctuation_marks = ['!', '؟', '،', '.', '؛', ':', '«', '»', '<', '>', '-', '[', ']', '{', '}', '|', ')', '(',
-                             '/', '=', '*', '\'', ',', '"', '`', '?']
-        for punc in punctuation_marks:
-            text = text.replace(punc, " ")
-        normalizer = hazm.Normalizer()
-        normalized_text = normalizer.normalize(text)
-        tokens = hazm.word_tokenize(normalized_text)
-        stemmer = hazm.Stemmer()
-        clean_tokens = []
-        for i in range(len(tokens)):
-            tokens[i] = stemmer.stem(tokens[i])
-        for token in tokens:
-            if len(token) != 0:
-                clean_tokens.append(token)
+        clean_tokens = persian_terms(text, False, True, True)
         if verbose:
             print('Tokens:', clean_tokens)
         return clean_tokens

@@ -1,0 +1,8 @@
+{
+	"id": "Unique ID of the paper",
+	"title": "Title of the paper",
+	"abstract": "Abstract of the paper",
+	"date": "Publication year",
+	"authors": ["Name of the first author", ..., "Name of the last author"],
+	"references": ["ID of the first reference", ..., "ID of the tenth reference"]
+}
