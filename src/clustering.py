@@ -162,7 +162,7 @@ def evaluate_results(kmeans_res, gmm_res, hier_res, data):
         for vectorization in ['tf-idf', 'w2v']:
             res['algorithm'].append(name.capitalize())
             res['vectorization'].append(vectorization)
-            alres = evaluate_clustering(data['major_cls'], value['tf-idf'])
+            alres = evaluate_clustering(data['major_cls'], value[vectorization])
             for metric, metric_value in alres.items():
                 res[metric].append(metric_value)
     return pd.DataFrame(res)
