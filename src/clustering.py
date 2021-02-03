@@ -1,6 +1,8 @@
 from sklearn.cluster import KMeans, AgglomerativeClustering
+from sklearn.manifold import TSNE
 from sklearn.mixture import GaussianMixture
-from sklearn.metrics import homogeneity_score, v_measure_score, adjusted_rand_score, completeness_score
+from sklearn.metrics import v_measure_score, adjusted_rand_score, adjusted_mutual_info_score
+from sklearn.metrics.cluster import contingency_matrix
 from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -36,11 +38,15 @@ def load_data(file='./files/hamshahri.json', stem=False, lemmatize=True, remove_
     return data, major_labels, minor_labels
 
 
+def purity_score(y_true, y_pred):
+    matrix = contingency_matrix(y_true, y_pred)
+    return np.sum(np.amax(matrix, axis=0)) / np.sum(matrix)
+
+
 def evaluate_clustering(true_labels, predicted_labels):
     return {
-        'purity': homogeneity_score(true_labels, predicted_labels),
-        'completeness': completeness_score(true_labels, predicted_labels),
-        'v_measure_score': v_measure_score(true_labels, predicted_labels),
+        'purity': purity_score(true_labels, predicted_labels),
+        'adjusted_mutual_info': adjusted_mutual_info_score(true_labels, predicted_labels),
         'adjusted_rand_index': adjusted_rand_score(true_labels, predicted_labels),
     }
 
@@ -82,7 +88,7 @@ def _submit_result(result, vec_type, metrics, variables):
         result['vectorization'].append(vec_type)
 
 
-def probe_hyperparams(algorithm, data, tfidf=None, w2v=None, fixed_params=None, variables=None):
+def gridsearch_hyperparams(algorithm, data, tfidf=None, w2v=None, fixed_params=None, variables=None):
     result = defaultdict(list)
 
     var_keys = list(variables.keys())
@@ -132,16 +138,23 @@ def GMM(data, vectors, n_components=None, **kwargs):
     return model.predict(vectors), sizes
 
 
-def cluster(data, algorithm, tfidf=None, w2v=None, options=None, save=False):
+def cluster(data, algorithm, tfidf=None, w2v=None, options=None, options_tfidf=None, options_w2v=None, save=False):
     options = options or dict()
+    options_tfidf = options_tfidf or dict()
+    options_w2v = options_w2v or dict()
     result = pd.DataFrame({'link': data['link']})
-    name = f'{algorithm.__name__.capitalize()}' + ('' if not options else (
-            ' (' + ','.join(f'{i}={j}' for i, j in options.items()) + ')'))
+
     if tfidf is not None:
-        result['tf-idf'], sizes = algorithm(data, tfidf, **options)
+        args = {**options, **options_tfidf}
+        name = f'{algorithm.__name__.capitalize()}' + ('' if not options else (
+                ' (' + ','.join(f'{i}={j}' for i, j in args.items()) + ')'))
+        result['tf-idf'], sizes = algorithm(data, tfidf, **args)
         plot2d(tfidf, result['tf-idf'], true_labels=data['major_cls'], sizes=sizes, title=f'{name} [tf-idf]')
     if w2v is not None:
-        result['w2v'], sizes = algorithm(data, w2v, **options)
+        args = {**options, **options_w2v}
+        name = f'{algorithm.__name__.capitalize()}' + ('' if not options else (
+                ' (' + ','.join(f'{i}={j}' for i, j in args.items()) + ')'))
+        result['w2v'], sizes = algorithm(data, w2v, **args)
         plot2d(w2v, result['w2v'], true_labels=data['major_cls'], sizes=sizes, title=f'{name} [w2v]')
     if save:
         result[['link', 'tf-idf']].rename(columns={'link': 'link', 'tf-idf': 'pred'}).to_csv(
@@ -151,14 +164,16 @@ def cluster(data, algorithm, tfidf=None, w2v=None, options=None, save=False):
     return result
 
 
-def pca(n_components, vectors):
-    pca = PCA(n_components)
+def pca(n_components, vectors, random_state=666):
+    pca = PCA(n_components, random_state=random_state)
     return pca.fit_transform(vectors)
 
 
-def evaluate_results(kmeans_res, gmm_res, hier_res, data):
+def evaluate_results(kmeans_res=None, gmm_res=None, hier_res=None, data=None):
     res = defaultdict(list)
     for name, value in [('kmeans', kmeans_res), ('gmm', gmm_res), ('hierarchical', hier_res)]:
+        if value is None:
+            continue
         for vectorization in ['tf-idf', 'w2v']:
             res['algorithm'].append(name.capitalize())
             res['vectorization'].append(vectorization)
@@ -168,17 +183,26 @@ def evaluate_results(kmeans_res, gmm_res, hier_res, data):
     return pd.DataFrame(res)
 
 
+def tsne(n_components, vectors):
+    return TSNE(n_components=n_components).fit_transform(vectors)
+
+
 def plot2d(vectors, labels, true_labels=None, sizes=None, title=None):
     vecs = pca(2, vectors)
+    tsne_vecs = tsne(2, vectors)
     if sizes is not None:
         sizes = sizes - sizes.min()
         sizes = (sizes / sizes.max()) * 40 + 10
     if true_labels is not None:
-        fig, axes = plt.subplots(1, 2, figsize=(14, 4.8))
+        fig, axes = plt.subplots(1, 4, figsize=(28, 4.8))
         axes[0].scatter(vecs[:, 0], vecs[:, 1], c=labels, s=sizes)
-        axes[0].set_title('Prediction')
-        axes[1].scatter(vecs[:, 0], vecs[:, 1], c=true_labels)
-        axes[1].set_title('Ground truth')
+        axes[0].set_title('Prediction (PCA)')
+        axes[1].scatter(tsne_vecs[:, 0], tsne_vecs[:, 1], c=labels, s=sizes)
+        axes[1].set_title('Prediction (TSNE)')
+        axes[2].scatter(vecs[:, 0], vecs[:, 1], c=true_labels)
+        axes[2].set_title('Ground truth (PCA)')
+        axes[3].scatter(tsne_vecs[:, 0], tsne_vecs[:, 1], c=true_labels)
+        axes[3].set_title('Ground truth (TSNE)')
         if title:
             fig.suptitle(title)
         return
