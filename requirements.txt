@@ -8,3 +8,4 @@ matplotlib
 gensim
 tqdm
 yellowbrick
+selenium

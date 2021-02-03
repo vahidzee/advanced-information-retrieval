@@ -71,14 +71,14 @@ while len(articles) <= to_fetch:
             counter += 1
 
             a = [addresses, Articles_till_now, counter]
-            with open('filename.pickle', 'wb') as handle:
+            with open('./outputs/a.pickle', 'wb') as handle:
                 pickle.dump(a, handle, protocol=pickle.HIGHEST_PROTOCOL)
-            with open('articles.pickle', 'wb') as handle:
+            with open('./outputs/articles.pickle', 'wb') as handle:
                 pickle.dump(articles, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     except:
         browser.quit()
         print(len(articles))
 
-with open('result.json', 'w') as fp:
+with open('./outputs/result.json', 'w') as fp:
     json.dump(articles, fp)
