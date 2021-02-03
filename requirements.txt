@@ -3,3 +3,8 @@ nltk
 hazm
 prompt_toolkit
 numpy
+sklearn
+matplotlib
+gensim
+tqdm
+yellowbrick

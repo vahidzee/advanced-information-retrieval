@@ -1,7 +1,7 @@
 from sklearn.cluster import KMeans, AgglomerativeClustering
 from sklearn.manifold import TSNE
 from sklearn.mixture import GaussianMixture
-from sklearn.metrics import v_measure_score, adjusted_rand_score, adjusted_mutual_info_score
+from sklearn.metrics import adjusted_rand_score, adjusted_mutual_info_score
 from sklearn.metrics.cluster import contingency_matrix
 from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
